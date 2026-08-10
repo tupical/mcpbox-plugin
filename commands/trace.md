@@ -1,0 +1,22 @@
+---
+description: Trace an mcpbox pipeline run — lineage chain, per-hop status, artifacts.
+---
+
+The user invoked `/mcpbox:trace` with a `run_id` in `$ARGUMENTS` (or asked about recent runs).
+
+## Steps
+
+1. If no `run_id`: `mcpbox_runs_list { limit:5 }` (add `status:"failed"` if the user asked
+   about failures), list them, and ask which to trace (or trace the most recent).
+2. `mcpbox_trace_get { run_id }`.
+3. Render:
+
+   ```
+   ## run <run_id> — <status>
+   torii → satori → enma → yatagarasu → fujin → daruma
+   <per-hop: layer, ok/failed, ms, lineage id>
+   handoff: <task_id or —>
+   ```
+
+4. If `status=failed`, surface the failing layer + reason and suggest re-running
+   `/mcpbox:pipeline-run` from the previous layer. Read-only.

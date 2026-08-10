@@ -1,0 +1,18 @@
+{
+  "name": "mcpbox",
+  "version": "0.1.13",
+  "description": "MCPBox agent stack for Codex: the daruma tracker plus the MeiSei maturity pipeline behind one MCP server.",
+  "author": {
+    "name": "tupical"
+  },
+  "homepage": "https://mcpbox.ru",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "MCPBox",
+    "shortDescription": "Task tracker + maturity pipeline for agents.",
+    "longDescription": "One MCP endpoint (https://mcpbox.ru/v1/mcp) exposing the daruma tracker (tasks, plans, plan-only intake) and the platform pipeline torii→satori→enma→yatagarasu→fujin→daruma. Ships the routing policy as a skill and /mcpbox-* prompts.",
+    "developerName": "tupical",
+    "category": "Productivity",
+    "websiteURL": "https://mcpbox.ru"
+  }
+}

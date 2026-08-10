@@ -1,0 +1,21 @@
+{
+  "name": "mcpbox-claude",
+  "description": "MCPBox × Claude Code glue. Drives the mcpbox MCP server (daruma tracker + full MeiSei pipeline torii→…→fujin→daruma). Ships /mcpbox:{tasks,plan,next,mine,status,close,sync,capture,doctor,mode} and pipeline commands, SessionStart/Stop/UserPromptSubmit hooks, and a managed CLAUDE.md policy that makes mcpbox the default tracker AND pipeline substrate.",
+  "version": "0.1.13",
+  "author": {
+    "name": "tupical"
+  },
+  "license": "UNLICENSED",
+  "homepage": "https://mcpbox.ru",
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "mcpbox",
+    "daruma",
+    "pipeline",
+    "orchestration",
+    "agent",
+    "plugin"
+  ],
+  "commands": "./commands/"
+}

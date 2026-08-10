@@ -1,0 +1,39 @@
+{
+  "description": "mcpbox-claude hooks: proactive session summary, capture/pipeline hints, and auto-record",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/user-prompt-submit.mjs\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.mjs\"",
+            "asyncRewake": true,
+            "rewakeMessage": "mcpbox-claude auto-record: a reusable lesson was captured from this session. Acknowledge or skip.",
+            "rewakeSummary": "mcpbox-claude captured a session lesson"
+          }
+        ]
+      }
+    ]
+  }
+}

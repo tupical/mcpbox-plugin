@@ -1,0 +1,13 @@
+{
+  "name": "mcpbox",
+  "owner": {
+    "name": "tupical"
+  },
+  "plugins": [
+    {
+      "name": "mcpbox-claude",
+      "source": "./",
+      "description": "MCPBox agent stack for Claude Code. One MCP server (https://mcpbox.ru/v1/mcp) exposing the daruma tracker tools plus the platform pipeline (torii→satori→enma→yatagarasu→fujin→daruma). Ships /mcpbox:{tasks,plan,next,mine,status,close,sync,capture,doctor,mode} + pipeline commands, SessionStart/Stop/UserPromptSubmit hooks, and a managed CLAUDE.md policy covering the full maturity stack."
+    }
+  ]
+}

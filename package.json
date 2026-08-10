@@ -1,6 +1,6 @@
 {
   "name": "@mcpbox/mcpbox-claude",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "MCPBox agent harness for Claude Code: managed policy (daruma tracker + full pipeline), hooks, and slash commands over the single mcpbox MCP server.",
   "type": "module",
   "publishConfig": {
@@ -24,7 +24,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "version": "node scripts/sync-version.mjs && git add lib/version.mjs .claude-plugin/plugin.json .codex-plugin/plugin.json"
   },
   "license": "UNLICENSED"
 }

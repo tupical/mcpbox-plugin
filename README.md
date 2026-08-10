@@ -10,6 +10,56 @@ Normally installed for you by `npx @mcpbox/mcpbox setup` (or
 server and picks Repository, Repository (user scope), or Global. Use this CLI directly to manage
 just the policy.
 
+## Install and update
+
+Claude Code and Codex install from the public git marketplace, which is the only
+source either of them will auto-update from — Claude ignores `autoUpdate` on a
+directory source, and Codex refuses outright (`marketplace … is not configured as
+a Git marketplace`). Neither accepts an npm registry as a marketplace source, so
+the repo below is generated from the published package on every release.
+
+```bash
+# Claude Code
+claude plugin marketplace add https://github.com/tupical/mcpbox-plugin.git
+claude plugin install mcpbox-claude@mcpbox
+```
+
+Then set `autoUpdate` on the marketplace in `~/.claude/settings.json`:
+
+```json
+"extraKnownMarketplaces": {
+  "mcpbox": {
+    "source": { "source": "git", "url": "https://github.com/tupical/mcpbox-plugin.git" },
+    "autoUpdate": true
+  }
+}
+```
+
+Claude refreshes in the background 0–10 minutes after a session starts and the
+new version is picked up by `/reload-plugins` or the next session — the running
+one keeps what it loaded at startup.
+
+```bash
+# Codex
+codex plugin marketplace add https://github.com/tupical/mcpbox-plugin.git
+codex plugin add mcpbox --marketplace mcpbox
+codex plugin marketplace upgrade mcpbox   # later, to update
+```
+
+Cursor and Kimi have no plugin manager; they are file installs, so re-run their
+init to update:
+
+```bash
+npx -y @mcpbox/mcpbox-claude@latest cursor-init
+npx -y @mcpbox/mcpbox-claude@latest kimi-init
+```
+
+A stale version announces itself at session start on Claude, Codex, and Kimi.
+Cursor exposes no hooks at all, so nothing can announce anything there — check
+manually, or let `cursor-init` in a routine update pass do it. Set
+`MCPBOX_NO_UPDATE_CHECK=1` to disable the registry lookup entirely (air-gapped
+installs, CI).
+
 ## What it manages
 
 | Agent  | Policy surface                         | MCP server                          | Hooks |

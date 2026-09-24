@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { installPolicy, removePolicy, BEGIN } from "../lib/policy.mjs";
+import { installPolicy, removePolicy, policyHierarchy } from "../lib/policy.mjs";
 import { installCodex, removeCodex, installCodexPolicy } from "../lib/codex.mjs";
 import {
   installCursor,
@@ -28,20 +28,21 @@ import {
   installCursorModeCommand,
 } from "../lib/cursor.mjs";
 import { installKimi, removeKimi } from "../lib/kimi.mjs";
+import { installOpencode, removeOpencode } from "../lib/opencode.mjs";
 import { readMode, writeMode, MODES } from "../lib/mode.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8"));
 
-const HELP = `mcpbox-claude v${pkg.version} — MCPBox agent harness (Claude / Codex / Cursor / Kimi)
+const HELP = `mcpbox-claude v${pkg.version} — MCPBox agent harness (Claude / Codex / Cursor / Kimi / OpenCode)
 
 Usage:
   mcpbox-claude init [--dir DIR]        Write the managed CLAUDE.md policy block
                                         (daruma tracker + full pipeline). Idempotent.
   mcpbox-claude uninit [--dir DIR]      Remove the managed CLAUDE.md policy block.
   mcpbox-claude codex-init [--dir DIR]  Write AGENTS.md policy, ~/.codex/config.toml
-                                        [mcp_servers.mcpbox], the mcpbox skill and
-                                        /mcpbox-* prompts. Idempotent.
+                                        [mcp_servers.mcpbox] and the mcpbox skill.
+                                        Idempotent.
   mcpbox-claude codex-uninit [--dir DIR]
   mcpbox-claude cursor-init [--dir DIR] Write .cursor/rules/mcpbox-policy.mdc +
                                         .cursor/mcp.json mcpbox entry. Idempotent.
@@ -50,6 +51,10 @@ Usage:
                                         mcpbox entry + [[hooks]] in ~/.kimi-code/config.toml.
                                         Idempotent.
   mcpbox-claude kimi-uninit [--dir DIR]
+  mcpbox-claude opencode-init [--dir DIR] Write AGENTS.md policy + mcpbox entry
+                                          under "mcp" in ~/.config/opencode/
+                                          opencode.json. Idempotent.
+  mcpbox-claude opencode-uninit [--dir DIR]
   mcpbox-claude doctor [--json]         Check the mcpbox MCP server + policy are wired.
   mcpbox-claude mode [off|lite|full]    Get/set pipeline strictness (how raw ideas route).
   mcpbox-claude export-marketplace [--dir DIR]
@@ -76,6 +81,7 @@ function parseDirFlag(rest) {
 
 const VERB = {
   installed: "Created",
+  inherited: "Using ancestor policy:",
   updated: "Refreshed mcpbox block in",
   appended: "Appended mcpbox block to",
   unchanged: "Already current:",
@@ -103,11 +109,10 @@ function report(r) {
 
 async function cmdCodexInit(rest) {
   const { projectDir } = parseDirFlag(rest);
-  const { policy, mcp, skill, prompts } = await installCodex({ projectDir });
+  const { policy, mcp, skill } = await installCodex({ projectDir });
   report(policy);
   report(mcp);
   report(skill);
-  report(prompts);
 }
 
 async function cmdCodexUninit(rest) {
@@ -151,6 +156,20 @@ async function cmdKimiUninit(rest) {
   report(hooks);
 }
 
+async function cmdOpencodeInit(rest) {
+  const { projectDir } = parseDirFlag(rest);
+  const { policy, mcp } = await installOpencode({ projectDir });
+  report(policy);
+  report(mcp);
+}
+
+async function cmdOpencodeUninit(rest) {
+  const { projectDir } = parseDirFlag(rest);
+  const { policy, mcp } = await removeOpencode({ projectDir });
+  report(policy);
+  report(mcp);
+}
+
 // Policy-only variants — for callers (mcpbox-cli setup) that already own the
 // MCP-server wiring and just need the managed policy file dropped.
 async function cmdCodexPolicy(rest) {
@@ -164,15 +183,6 @@ async function cmdCursorPolicy(rest) {
   report(await installCursorModeCommand({ projectDir }));
 }
 
-async function policyPresent(projectDir) {
-  const target = join(projectDir ? resolve(projectDir) : process.cwd(), "CLAUDE.md");
-  try {
-    return (await fs.readFile(target, "utf8")).includes(BEGIN);
-  } catch (err) {
-    if (err.code === "ENOENT") return false;
-    throw err;
-  }
-}
 
 function mcpServerPresent() {
   // `claude mcp list` prints one server per line as "name: url ...".
@@ -196,17 +206,19 @@ async function cmdDoctor(rest) {
   const flags = rest.filter((a) => a !== "--json");
   const { projectDir } = parseDirFlag(flags);
 
-  const policy = await policyPresent(projectDir);
+  const hierarchy = await policyHierarchy({ projectDir });
+  const policy = hierarchy.present;
   const mcp = mcpServerPresent();
-  const ready = policy && mcp === true;
+  const ready = policy && !hierarchy.duplicate && mcp === true;
 
   if (json) {
-    process.stdout.write(JSON.stringify({ ready, policy, mcp }) + "\n");
+    process.stdout.write(JSON.stringify({ ready, policy, mcp, policy_paths: hierarchy.paths, policy_duplicate: hierarchy.duplicate }) + "\n");
   } else {
     const mark = (v) => (v === true ? "✓" : v === false ? "✗" : "?");
     process.stdout.write(
       `mcpbox MCP server: ${mark(mcp)}${mcp === null ? " (claude CLI not found)" : ""}\n` +
-        `CLAUDE.md policy:  ${mark(policy)}\n` +
+        `CLAUDE.md policy:  ${mark(policy)}${hierarchy.duplicate ? " (duplicate managed blocks)" : ""}\n` +
+        hierarchy.paths.map((p) => `  ${p}\n`).join("") +
         `${ready ? "READY" : "NOT READY — run: npx @mcpbox/mcpbox setup"}\n`
     );
   }
@@ -261,6 +273,10 @@ async function main(argv) {
       return cmdKimiInit(rest);
     case "kimi-uninit":
       return cmdKimiUninit(rest);
+    case "opencode-init":
+      return cmdOpencodeInit(rest);
+    case "opencode-uninit":
+      return cmdOpencodeUninit(rest);
     case "codex-policy":
       return cmdCodexPolicy(rest);
     case "cursor-policy":

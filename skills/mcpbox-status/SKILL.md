@@ -1,4 +1,5 @@
 ---
+name: mcpbox-status
 description: Show who and where you are on mcpbox — workspace, account, this repo's project — plus server and pipeline health.
 ---
 

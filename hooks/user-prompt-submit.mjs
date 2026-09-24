@@ -29,7 +29,7 @@ import { VERSION } from "../lib/version.mjs";
 const PATTERNS = [
   {
     re: /\b(pipeline|maturity|handoff|action\s*packet)\b|(?<![а-яёА-ЯЁ])(пайплайн|конвейер|зрелость|хендофф)(?![а-яёА-ЯЁ])/,
-    hint: "[mcpbox] Detected pipeline intent → /mcpbox:pipeline-run or mcpbox_pipeline_run (raw input matures torii→…→fujin→handoff, never a direct daruma task).",
+    hint: "[mcpbox] Detected pipeline intent → if this is raw input to mature: /mcpbox:pipeline-run or mcpbox_pipeline_run (torii→…→fujin→handoff). Decided work that only mentions the pipeline follows the normal routing rule.",
   },
   {
     // create / import — ACTION + task/issue OBJECT (avoids bare-verb false positives).
@@ -42,7 +42,7 @@ const PATTERNS = [
   },
   {
     re: /\b(capture|record|lesson)\b|(?<![а-яёА-ЯЁ])(сохрани|запомни|урок)(?![а-яёА-ЯЁ])/,
-    hint: "[mcpbox] Detected lesson-capture intent → /mcpbox:capture in Claude, otherwise write the lesson as a daruma comment/document.",
+    hint: "[mcpbox] Detected lesson-capture intent → /mcpbox:capture in Claude, otherwise persist it with mcpbox_knowledge_write.",
   },
   {
     re: /\b(sync|refresh\s+tasks)\b|(?<![а-яёА-ЯЁ])(синх|обнови\s+задачи)(?![а-яёА-ЯЁ])/,
@@ -50,11 +50,11 @@ const PATTERNS = [
   },
   {
     re: /\b(status|progress|what.?s\s+(open|next|left))\b|(?<![а-яёА-ЯЁ])(статус|прогресс|что\s+(открыто|осталось|дальше))(?![а-яёА-ЯЁ])/,
-    hint: "[mcpbox] Detected status query → /mcpbox:status in Claude, otherwise daruma_healthz + mcpbox_runs_list.",
+    hint: "[mcpbox] Detected status query → if this is about mcpbox/daruma: /mcpbox:status in Claude, otherwise daruma_workspace_info + daruma_list status=active + mcpbox_runs_list.",
   },
   {
     re: /\b(close|complete|mark\s+.*done)\b|(?<![а-яёА-ЯЁ])(закрой|закрыть|завершить|пометь\s+.*выполненной)(?![а-яёА-ЯЁ])/,
-    hint: "[mcpbox] Detected close intent → /mcpbox:close in Claude, otherwise daruma_complete (or daruma_set_status).",
+    hint: "[mcpbox] Detected close intent → if this refers to a daruma task: /mcpbox:close in Claude, otherwise daruma_complete (or daruma_set_status).",
   },
 ];
 
@@ -70,7 +70,7 @@ const PATTERNS = [
 // process restart at daruma_complete — the incident again, wearing another verb.
 // In full mode every hint therefore carries the exit in front of it.
 const OPERATIONAL_EXIT =
-  "If this is an operational action you can just carry out — start/restart something, read a log, check status, open a file, answer a question — do it and record NOTHING, in neither daruma nor the pipeline. Otherwise: ";
+  "If this is an operational action you can just carry out — start/restart something, read a log, check status, open a file, answer a question — do it and record nothing, in neither daruma nor the pipeline. Otherwise: ";
 
 const FULL_ASSESS_HINT =
   "[mcpbox:full] " + OPERATIONAL_EXIT + "assess rawness: only raw material — an idea, hypothesis, or undecided direction — matures through the pipeline (mcpbox_pipeline_run → …fujin → handoff). Work that is already decided and bounded, and follow-up work extending a run that has already handed off (it has a task_id), both go straight to daruma via daruma_plan_materialize. A run still in flight is not a shortcut — finish it first.";

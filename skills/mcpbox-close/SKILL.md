@@ -1,4 +1,5 @@
 ---
+name: mcpbox-close
 description: Close an mcpbox task as done, with an optional completion note.
 ---
 

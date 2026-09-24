@@ -1,4 +1,5 @@
 ---
+name: mcpbox-capture
 description: Capture a durable, reusable lesson from this session into mcpbox.
 ---
 

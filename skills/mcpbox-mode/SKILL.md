@@ -1,4 +1,5 @@
 ---
+name: mcpbox-mode
 description: Set how strictly raw ideas route through the mcpbox maturity pipeline (off | lite | full).
 ---
 

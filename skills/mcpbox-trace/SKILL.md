@@ -1,4 +1,5 @@
 ---
+name: mcpbox-trace
 description: Trace an mcpbox pipeline run — lineage chain, per-hop status, artifacts.
 ---
 

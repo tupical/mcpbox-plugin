@@ -1,4 +1,5 @@
 ---
+name: mcpbox-next
 description: Claim the next ready task from the active mcpbox plan and show its briefing.
 ---
 

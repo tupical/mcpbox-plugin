@@ -29,8 +29,30 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.mjs\"",
             "asyncRewake": true,
-            "rewakeMessage": "mcpbox-claude auto-record: a reusable lesson was captured from this session. Acknowledge or skip.",
+            "rewakeMessage": "mcpbox-claude auto-record: consider capturing a reusable lesson from this session, or skip.",
             "rewakeSummary": "mcpbox-claude captured a session lesson"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/acceptance-guard.mjs\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/acceptance-guard.mjs\"",
+            "timeout": 15
           }
         ]
       }

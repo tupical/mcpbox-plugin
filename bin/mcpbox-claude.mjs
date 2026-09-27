@@ -19,7 +19,8 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { installPolicy, removePolicy, policyHierarchy } from "../lib/policy.mjs";
+import { installPolicy, removePolicy, policyHierarchy, stalePolicyPaths, competingPolicyPaths } from "../lib/policy.mjs";
+import { credentialsPath, login, logout, readCredentials } from "../lib/cloud-knowledge.mjs";
 import { installCodex, removeCodex, installCodexPolicy } from "../lib/codex.mjs";
 import {
   installCursor,
@@ -56,6 +57,8 @@ Usage:
                                           opencode.json. Idempotent.
   mcpbox-claude opencode-uninit [--dir DIR]
   mcpbox-claude doctor [--json]         Check the mcpbox MCP server + policy are wired.
+  mcpbox-claude login                   Pair this machine so hooks load project knowledge.
+  mcpbox-claude logout                  Forget the pairing token.
   mcpbox-claude mode [off|lite|full]    Get/set pipeline strictness (how raw ideas route).
   mcpbox-claude export-marketplace [--dir DIR]
                                         Mirror this package to a stable directory usable as
@@ -88,6 +91,7 @@ const VERB = {
   "removed-block": "Removed mcpbox block from",
   "removed-file": "Removed",
   missing: "No mcpbox block found at",
+  malformed: "Left alone (broken or repeated mcpbox markers — fix by hand):",
 };
 
 async function cmdInit(rest) {
@@ -201,6 +205,25 @@ async function cmdMode(rest) {
   process.stdout.write(`✓ mcpbox pipeline mode: ${m}\n`);
 }
 
+// Pairs this machine with a workspace so hooks can put its project knowledge
+// into new sessions (lib/cloud-knowledge.mjs). The token stays in
+// ~/.agents/mcpbox/credentials.json, readable by this user only.
+async function cmdLogin(rest) {
+  const i = rest.indexOf("--base-url");
+  const baseUrl = i !== -1 ? rest[i + 1] : undefined;
+  if (i !== -1 && (!baseUrl || baseUrl.startsWith("--"))) throw new Error("--base-url needs a value");
+  const creds = await login(baseUrl ? { baseUrl } : {});
+  process.stdout.write(`✓ Paired with workspace ${creds.workspace_id}; token in ${credentialsPath()}\n`);
+}
+
+async function cmdLogout() {
+  await logout();
+  process.stdout.write(
+    `✓ Removed ${credentialsPath()}\n` +
+      "The token itself stays valid until revoked in the workspace settings (Tokens).\n",
+  );
+}
+
 async function cmdDoctor(rest) {
   const json = rest.includes("--json");
   const flags = rest.filter((a) => a !== "--json");
@@ -210,15 +233,31 @@ async function cmdDoctor(rest) {
   const policy = hierarchy.present;
   const mcp = mcpServerPresent();
   const ready = policy && !hierarchy.duplicate && mcp === true;
+  // Stale is a warning, not NOT READY: the next SessionStart refreshes it.
+  const stale = await stalePolicyPaths(hierarchy.paths);
+  // Also a warning: two policies in one file, one of them from the daruma CLI.
+  const competing = await competingPolicyPaths({ projectDir });
+  // Not required: without it hooks hint at the knowledge instead of loading it.
+  const paired = (await readCredentials()) !== null;
 
   if (json) {
-    process.stdout.write(JSON.stringify({ ready, policy, mcp, policy_paths: hierarchy.paths, policy_duplicate: hierarchy.duplicate }) + "\n");
+    process.stdout.write(JSON.stringify({
+      ready, policy, mcp,
+      policy_paths: hierarchy.paths,
+      policy_duplicate: hierarchy.duplicate,
+      policy_stale: stale.length > 0,
+      policy_stale_paths: stale,
+      policy_competing_paths: competing,
+      knowledge_paired: paired,
+    }) + "\n");
   } else {
     const mark = (v) => (v === true ? "✓" : v === false ? "✗" : "?");
     process.stdout.write(
       `mcpbox MCP server: ${mark(mcp)}${mcp === null ? " (claude CLI not found)" : ""}\n` +
         `CLAUDE.md policy:  ${mark(policy)}${hierarchy.duplicate ? " (duplicate managed blocks)" : ""}\n` +
-        hierarchy.paths.map((p) => `  ${p}\n`).join("") +
+        hierarchy.paths.map((p) => `  ${p}${stale.includes(p) ? " (stale — the next session start of this plugin version refreshes it)" : ""}\n`).join("") +
+        competing.map((p) => `  ! ${p} also holds a daruma CLI policy block — keep one\n`).join("") +
+        `Project knowledge: ${paired ? "✓ paired" : "hint only — run: npx -y @mcpbox/mcpbox-claude login"}\n` +
         `${ready ? "READY" : "NOT READY — run: npx @mcpbox/mcpbox setup"}\n`
     );
   }
@@ -283,6 +322,10 @@ async function main(argv) {
       return cmdCursorPolicy(rest);
     case "doctor":
       return cmdDoctor(rest);
+    case "login":
+      return cmdLogin(rest);
+    case "logout":
+      return cmdLogout();
     case "mode":
       return cmdMode(rest);
     case "export-marketplace":

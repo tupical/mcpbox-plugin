@@ -60,9 +60,36 @@ npx -y @mcpbox/mcpbox-claude@latest kimi-init
 npx -y @mcpbox/mcpbox-claude@latest opencode-init
 ```
 
+On Claude and Codex a plugin update also reaches the policy you already
+installed: at session start the hook rewrites every existing `mcpbox:policy`
+block from the working directory up (`CLAUDE.md` on Claude, `AGENTS.md` plus
+the `mcpbox` skill on Codex) to the running version, and says so in the
+session context. It never adds a block and never touches text outside the
+markers; `doctor --json` reports `policy_stale` until it has run. Set
+`MCPBOX_NO_POLICY_SYNC=1` to keep installed blocks as they are.
+
+### Project knowledge in every session
+
+Agents answer repo questions right when they have the project's knowledge
+(`mcpbox_knowledge_read`) in front of them, and rarely fetch it on their own.
+Pair the machine once so the first prompt of every session carries it:
+
+```bash
+npx -y @mcpbox/mcpbox-claude login    # confirm the code in the browser
+```
+
+The workspace-bound token is kept in `~/.agents/mcpbox/credentials.json`
+(mode 0600) and only ever sent over https; `logout` deletes the file, and
+revoking the token itself happens in the workspace settings (Tokens). The
+repo path of each new session goes to the server to find its project. Unpaired, rejected, or with the path
+unbound in the paired workspace, the hook adds a ready `mcpbox_knowledge_read`
+call instead of the text. Knowledge rows arrive
+marked as workspace data, not instructions. Mode `off` disables both.
+
 A stale version announces itself at session start on Claude, Codex, and Kimi.
-Cursor exposes no hooks at all, so nothing can announce anything there — check
-manually, or let `cursor-init` in a routine update pass do it. Set
+The Cursor adapter installs no hooks (Cursor has them since 2026, unwired
+here), so nothing announces anything there — check manually, or let
+`cursor-init` in a routine update pass do it. Set
 `MCPBOX_NO_UPDATE_CHECK=1` to disable the registry lookup entirely (air-gapped
 installs, CI).
 
@@ -147,6 +174,7 @@ approved by the owner with a $0.30 cap; no local instruction text is published.
 
 The managed policy is a compact index (at most 100 lines) for all clients.
 It retains tracker safety rules, mode handling and tool/skill entry points.
-The routing decision tree is supplied by MCP `initialize.instructions`
-(`PLATFORM_INSTRUCTIONS`); clients without command skills use the plain tool
+Routing and the execution-path verification rule before editing are supplied by
+MCP `initialize.instructions` (`PLATFORM_INSTRUCTIONS` in
+`crates/cloud-api/src/v1_gateway.rs`); clients without command skills use the plain tool
 entry points. Reconnect the MCP server if its instructions are unavailable.

@@ -18,6 +18,7 @@
 
 import { isCodexSurface, writeHookOutput } from "../lib/hook-output.mjs";
 import { MCPClient } from "../lib/mcp-client.mjs";
+import { BLOCK_BODY_PLAIN, syncPolicyBlocks } from "../lib/policy.mjs";
 import { checkForUpdate, updateNotice } from "../lib/update-check.mjs";
 import { VERSION } from "../lib/version.mjs";
 import { pathToFileURL } from "node:url";
@@ -101,8 +102,29 @@ async function fetchSummary() {
   }
 }
 
+// Bring the policy blocks already installed around cwd up to this plugin
+// version (see syncPolicyBlocks). Failures stay silent: a read-only tree must
+// never block the session. MCPBOX_NO_POLICY_SYNC=1 opts out. Only the plugin
+// surfaces sync: Kimi runs a copy frozen at kimi-init (no CLAUDE_PLUGIN_ROOT,
+// no PLUGIN_DATA), whose policy would be stale by construction.
+export async function syncPolicy(cwd = process.cwd(), env = process.env) {
+  if (env.MCPBOX_NO_POLICY_SYNC) return [];
+  const paths = [];
+  if (isCodexSurface(env)) {
+    paths.push(...await syncPolicyBlocks({ cwd, file: "AGENTS.md", block: BLOCK_BODY_PLAIN }).catch(() => []));
+    try {
+      const { syncCodexSkill } = await import("../lib/codex.mjs");
+      const skill = await syncCodexSkill();
+      if (skill.action === "updated") paths.push(skill.path);
+    } catch { /* skill dir unwritable — AGENTS.md sync still counts */ }
+  } else if (env.CLAUDE_PLUGIN_ROOT) {
+    paths.push(...await syncPolicyBlocks({ cwd }).catch(() => []));
+  }
+  return paths;
+}
+
 export async function main() {
-  const [data, update] = await Promise.all([
+  const [data, update, synced] = await Promise.all([
     fetchSummary().catch((err) => {
       if (process.env.MCPBOX_DEBUG) {
         process.stderr.write(`[mcpbox-claude/session-start] error: ${err?.message ?? err}\n`);
@@ -110,13 +132,22 @@ export async function main() {
       return null;
     }),
     checkForUpdate({ current: VERSION }),
+    syncPolicy(),
   ]);
-  const systemMessage = update?.outdated
-    ? updateNotice(update.current, update.latest, isCodexSurface() ? "codex" : "claude")
-    : undefined;
+  const syncNote = synced.length
+    ? `[mcpbox] Policy block refreshed to plugin ${VERSION}: ${synced.join(", ")}\n`
+    : "";
+  // The user sees what we wrote into their files, not just the model.
+  const notices = [
+    update?.outdated
+      ? updateNotice(update.current, update.latest, isCodexSurface() ? "codex" : "claude")
+      : null,
+    synced.length ? `mcpbox: policy block refreshed to ${VERSION} in ${synced.join(", ")}` : null,
+  ].filter(Boolean);
+  const systemMessage = notices.length ? notices.join("\n") : undefined;
 
   if (!data) {
-    writeHookOutput("SessionStart", "", { systemMessage });
+    writeHookOutput("SessionStart", syncNote, { systemMessage });
     process.exit(0);
   }
 
@@ -125,7 +156,7 @@ export async function main() {
   if (!tasks || tasks.length === 0) {
     writeHookOutput(
       "SessionStart",
-      "[mcpbox] No open tasks — run /mcpbox:tasks to verify, or /mcpbox:pipeline-run \"<idea>\" to open a maturity run.",
+      syncNote + "[mcpbox] No open tasks — run /mcpbox:tasks to verify, or /mcpbox:pipeline-run \"<idea>\" to open a maturity run.",
       { systemMessage },
     );
     process.exit(0);
@@ -143,7 +174,7 @@ export async function main() {
   if (extra > 0) lines.push(`  …and ${extra} more — /mcpbox:tasks for full list`);
   lines.push("→ /mcpbox:next to claim the next task  |  /mcpbox:status for server + pipeline health");
 
-  writeHookOutput("SessionStart", lines.join("\n"), { systemMessage });
+  writeHookOutput("SessionStart", syncNote + lines.join("\n"), { systemMessage });
   process.exit(0);
 }
 

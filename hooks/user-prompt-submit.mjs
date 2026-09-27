@@ -13,11 +13,18 @@
 // event JSON on stdin (Kimi Code passes the payload via stdin, and so does
 // Claude Code — this also covers Claude setups without the env var).
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import {
+  KNOWLEDGE_BUDGET,
+  KNOWLEDGE_KINDS,
+  fetchProjectKnowledge,
+  formatKnowledge,
+  readCredentials,
+} from "../lib/cloud-knowledge.mjs";
 import { writeHookOutput } from "../lib/hook-output.mjs";
 import { readMode } from "../lib/mode.mjs";
 import { checkForUpdate, updateNotice } from "../lib/update-check.mjs";
@@ -137,6 +144,39 @@ export function promptFromHookPayload(payload) {
   return "";
 }
 
+// Whether this is the session's first prompt, claimed once through an empty
+// marker file per session (`wx` fails when the marker already exists).
+// Without a session id there is no "first": callers treat it as not first.
+// Markers older than a week are swept on each successful claim, so the
+// directory stays bounded however many sessions run.
+const SESSION_MARKERS = () => join(homedir(), ".agents", "mcpbox", "sessions");
+const MARKER_TTL_MS = 7 * 24 * 3600 * 1000;
+
+function sweepMarkers(dir) {
+  const now = Date.now();
+  readdir(dir)
+    .then((names) => Promise.all(names.map(async (name) => {
+      const marker = join(dir, name);
+      if (now - (await stat(marker)).mtimeMs > MARKER_TTL_MS) await rm(marker, { force: true });
+    }).map((p) => p.catch(() => {}))))
+    .catch(() => { /* best effort */ });
+}
+
+export async function claimFirstPrompt(payload) {
+  const sessionId = typeof payload?.session_id === "string" ? payload.session_id : "";
+  if (!sessionId) return false;
+  const dir = SESSION_MARKERS();
+  try {
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, sessionId.replace(/[^\w.-]/g, "_")), "", { flag: "wx" });
+  } catch {
+    return false;
+  }
+  // Off the critical path: the prompt does not wait for the sweep.
+  sweepMarkers(dir);
+  return true;
+}
+
 // Kimi never fires SessionStart (its hook block registers it, but the event
 // does not arrive) and it reads AGENTS.md from the working directory ONLY —
 // no walk up the tree, no user-level instruction file. A globally-installed
@@ -144,56 +184,78 @@ export function promptFromHookPayload(payload) {
 // agent answers "no such command" to `mcpbox mode`. UserPromptSubmit does
 // fire, so for Kimi the policy rides in on the first prompt of a session.
 // Claude registers this hook without --policy: it reads CLAUDE.md already.
-async function policyForFirstPrompt(payload) {
-  if (!process.argv.includes("--policy")) return { policy: "", firstPrompt: false };
+async function policyForPrompt(payload, firstPrompt) {
+  if (!process.argv.includes("--policy")) return "";
   // PLAIN: this path only ever serves non-Claude surfaces, which have no
   // /mcpbox:* commands.
   const { BLOCK_BODY_PLAIN, BEGIN } = await import("../lib/policy.mjs");
   const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd();
-  let policy = BLOCK_BODY_PLAIN;
   try {
     // An AGENTS.md right here already carries the block — the agent is
     // reading it, so a second copy would be pure noise.
-    if ((await readFile(join(cwd, "AGENTS.md"), "utf8")).includes(BEGIN)) policy = "";
+    if ((await readFile(join(cwd, "AGENTS.md"), "utf8")).includes(BEGIN)) return "";
   } catch { /* no AGENTS.md here — the policy has to come from us */ }
+  // No session id: the policy repeats on every prompt rather than never.
+  return firstPrompt || !payload?.session_id ? BLOCK_BODY_PLAIN : "";
+}
 
-  if (!policy) return { policy: "", firstPrompt: false };
-  const sessionId = typeof payload?.session_id === "string" ? payload.session_id : "";
-  if (!sessionId) return { policy, firstPrompt: false }; // policy repeats; update notices must not
-  // ponytail: one empty marker file per session, never swept. They are 0
-  // bytes; add a cleanup pass only if a long-lived install ever complains.
-  const marker = join(homedir(), ".agents", "mcpbox", "sessions", sessionId.replace(/[^\w.-]/g, "_"));
+// Project knowledge is read only when the agent is told to, next to the
+// question, with a call it can make as is (measured 2026-09-27, ADR-0010 D4:
+// the same three repo questions, 6/6 right when told to read vs 1/5 as
+// usual; a policy line alone was ignored). The hook knows the repo path, not
+// the project, so the call resolves the project by scope_path.
+export function knowledgeHint(cwd, { relogin = false } = {}) {
+  const call = JSON.stringify({ scope: "project", scope_path: cwd, kinds: KNOWLEDGE_KINDS, budget: KNOWLEDGE_BUDGET });
+  const hint = `[mcpbox] Before answering or changing anything in this repo, read its project knowledge (rules its files do not carry): mcpbox_knowledge_read ${call}. If no project is bound to this path, go on without it.`;
+  return relogin
+    ? `${hint} (The pairing token was rejected — tell the user to run: npx -y @mcpbox/mcpbox-claude login)`
+    : hint;
+}
+
+// Paired (`mcpbox-claude login`): the knowledge text itself. Not paired, the
+// read failed, or the path is unbound in the paired workspace (the client's
+// own MCP session may be in another one): the ready call as a hint. No rows
+// for a bound project: nothing.
+export async function knowledgeForSession(cwd, { fetchKnowledge = fetchProjectKnowledge, creds } = {}) {
+  const auth = creds === undefined ? await readCredentials() : creds;
+  if (!auth) return knowledgeHint(cwd);
   try {
-    await mkdir(dirname(marker), { recursive: true });
-    // wx fails if it exists → the policy already went out this session.
-    await writeFile(marker, "", { flag: "wx" });
-  } catch {
-    return { policy: "", firstPrompt: false };
+    const result = await fetchKnowledge(cwd, { creds: auth });
+    if (!result || result.unbound_scope_path) return knowledgeHint(cwd);
+    return formatKnowledge(result);
+  } catch (err) {
+    return knowledgeHint(cwd, { relogin: Boolean(err?.rejected) });
   }
-  return { policy, firstPrompt: true };
 }
 
 async function main() {
-  let prompt = process.env.CLAUDE_USER_PROMPT ?? "";
+  // Always read the event: session_id and cwd live only there, even when
+  // Claude Code also exports the prompt as CLAUDE_USER_PROMPT.
   let payload = null;
-  if (!prompt) {
-    const raw = await readStdin();
-    if (raw.trim()) {
-      try {
-        payload = JSON.parse(raw);
-        prompt = promptFromHookPayload(payload);
-      } catch { /* not JSON — no prompt to route */ }
-    }
+  // The env var already gave the prompt: wait for the event only briefly.
+  const raw = await readStdin(process.env.CLAUDE_USER_PROMPT ? 300 : 3000);
+  if (raw.trim()) {
+    try {
+      payload = JSON.parse(raw);
+    } catch { /* not JSON — no event to read */ }
   }
-  const { policy, firstPrompt } = await policyForFirstPrompt(payload);
-  const update = firstPrompt ? await checkForUpdate({ current: VERSION }) : null;
-  const hint = promptSubmitHint(prompt, readMode());
+  const prompt = process.env.CLAUDE_USER_PROMPT ?? (payload ? promptFromHookPayload(payload) : "");
+  const mode = readMode();
+  const firstPrompt = await claimFirstPrompt(payload);
+  const policy = await policyForPrompt(payload, firstPrompt);
+  const cwd = typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : "";
+  // In parallel: both are network calls on the session's first prompt.
+  const [knowledge, update] = await Promise.all([
+    firstPrompt && cwd && mode !== "off" ? knowledgeForSession(cwd) : "",
+    firstPrompt && policy ? checkForUpdate({ current: VERSION }) : null,
+  ]);
+  const hint = promptSubmitHint(prompt, mode);
   const notice = update?.outdated ? updateNotice(update.current, update.latest, "kimi") : "";
   // One write, not two: Codex parses stdout as a single JSON document, so a
   // policy object followed by a hint object is as invalid as plain text.
   writeHookOutput(
     "UserPromptSubmit",
-    [notice, policy, hint].filter(Boolean).join("\n"),
+    [notice, policy, knowledge, hint].filter(Boolean).join("\n"),
   );
 }
 

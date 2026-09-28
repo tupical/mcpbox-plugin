@@ -12,12 +12,11 @@ The user invoked `/mcpbox:mode` with `$ARGUMENTS` = `off` | `lite` | `full` (emp
 - **lite** (default) — nudge toward the pipeline only when the input explicitly mentions it
   (pipeline / maturity / handoff / конвейер …).
 - **full** — assess every substantive request for **rawness**. A raw idea, hypothesis, or
-  undecided direction matures through the pipeline (`mcpbox_pipeline_run` → …fujin → handoff)
+  undecided direction matures through the pipeline (`mcpbox_pipeline_run` → handoff)
   before it becomes a task.
 
 The mode only tunes how actively you *offer* the pipeline. It does not change where work
-lands — that is the one routing rule in the MCP server's `initialize` instructions (tool descriptions
-point to it): decided-and-bounded work and
+lands — that is the MCP server's routing rule: decided-and-bounded work and
 follow-ups extending a run that already handed off go straight to daruma; raw material — and
 anything belonging to a run still in flight — goes through the pipeline.
 

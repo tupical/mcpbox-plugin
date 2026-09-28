@@ -36,12 +36,12 @@ import { VERSION } from "../lib/version.mjs";
 const PATTERNS = [
   {
     re: /\b(pipeline|maturity|handoff|action\s*packet)\b|(?<![а-яёА-ЯЁ])(пайплайн|конвейер|зрелость|хендофф)(?![а-яёА-ЯЁ])/,
-    hint: "[mcpbox] Detected pipeline intent → if this is raw input to mature: /mcpbox:pipeline-run or mcpbox_pipeline_run (torii→…→fujin→handoff). Decided work that only mentions the pipeline follows the normal routing rule.",
+    hint: "[mcpbox] Detected pipeline intent → if this is raw input to mature: /mcpbox:pipeline-run or mcpbox_pipeline_run. Decided work that only mentions the pipeline follows the normal routing rule.",
   },
   {
     // create / import — ACTION + task/issue OBJECT (avoids bare-verb false positives).
     re: /\b(add|create|new|log|move|import)\s+(a\s+|an\s+)?(task|issue|ticket|subtask)\b|(?<![а-яёА-ЯЁ])(добавь|добавить|заведи|завести|создай|создать)\s+(задачу|таск|подзадачу|тикет)(?![а-яёА-ЯЁ])|(?<![а-яёА-ЯЁ])(перенеси|перенести|импортируй|заведи)\s+(ишью|задачу|таск|тикет|issue)(?![а-яёА-ЯЁ])/,
-    hint: "[mcpbox] Detected task-intake/import intent → daruma_plan_materialize (plan-only intake, ADR-0007; external issue: also daruma_link the source). Adding to an EXISTING plan: still materialize (no bare-task intake), then attach via daruma_plan_add_task (recompose) or pass parent_plan_id. Not a lookup — don't treat the id as an existing task.",
+    hint: "[mcpbox] Detected task-intake/import intent → daruma_plan_materialize (tasks are created only with a plan; external issue: also daruma_link the source). Adding to an EXISTING plan: still materialize (no bare-task intake), then attach via daruma_plan_add_task (recompose) or pass parent_plan_id. Not a lookup — don't treat the id as an existing task.",
   },
   {
     re: /\b(list|show|view)\s+(all\s+|active\s+|open\s+)?(tasks|issues|backlog)\b|(?<![а-яёА-ЯЁ])(выпиши|покажи|перечисли|список)\s+(активные\s+)?(задачи|задач|таски|бэклог)(?![а-яёА-ЯЁ])/,
@@ -80,7 +80,7 @@ const OPERATIONAL_EXIT =
   "If this is an operational action you can just carry out — start/restart something, read a log, check status, open a file, answer a question — do it and record nothing, in neither daruma nor the pipeline. Otherwise: ";
 
 const FULL_ASSESS_HINT =
-  "[mcpbox:full] " + OPERATIONAL_EXIT + "assess rawness: only raw material — an idea, hypothesis, or undecided direction — matures through the pipeline (mcpbox_pipeline_run → …fujin → handoff). Work that is already decided and bounded, and follow-up work extending a run that has already handed off (it has a task_id), both go straight to daruma via daruma_plan_materialize. A run still in flight is not a shortcut — finish it first.";
+  "[mcpbox:full] " + OPERATIONAL_EXIT + "assess rawness: only raw material — an idea, hypothesis, or undecided direction — goes to mcpbox_pipeline_run. Work that is already decided and bounded, and follow-up work extending a run that has already handed off (it has a task_id), both go straight to daruma via daruma_plan_materialize. A run still in flight is not a shortcut — finish it first.";
 
 // ponytail: length heuristic for "substantive" — cheap and good enough to skip
 // "ok"/"yes"/"go". Swap for a token/keyword check only if it nags in practice.

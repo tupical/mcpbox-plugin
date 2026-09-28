@@ -8,7 +8,7 @@ The user invoked `/mcpbox:status`.
 
 1. `daruma_workspace_info` — one call carries most of the answer. If it fails
    with a transport error, report "mcpbox unreachable" and how to start the
-   server; stop (do not fall back to `.omc/plans/` or markdown). No separate
+   server; stop (do not fall back to local plan files or markdown). No separate
    health probe: the first real call is the probe.
    - `workspace.slug` / `workspace.title` — the authorized workspace;
    - `account.email` — who this MCP session is authenticated as;

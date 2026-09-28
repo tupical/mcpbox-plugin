@@ -4,7 +4,7 @@ description: Show open mcpbox tasks for the active project as a compact markdown
 
 The user invoked `/mcpbox:tasks`.
 
-Drive the mcpbox MCP server (do not invent IDs, do not write to `.omc/plans/`).
+Drive the mcpbox MCP server (do not invent IDs, do not write local plan files).
 
 ## Steps
 

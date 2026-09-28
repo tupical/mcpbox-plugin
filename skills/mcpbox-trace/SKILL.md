@@ -14,8 +14,7 @@ The user invoked `/mcpbox:trace` with a `run_id` in `$ARGUMENTS` (or asked about
 
    ```
    ## run <run_id> — <status>
-   torii → satori → enma → yatagarasu → fujin → daruma
-   <per-hop: layer, ok/failed, ms, lineage id>
+   <per-hop, in the order the trace returns them: layer, ok/failed, ms>
    handoff: <task_id or —>
    ```
 

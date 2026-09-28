@@ -26,7 +26,13 @@ import {
   installCursor,
   removeCursor,
   installCursorRule,
+  removeCursorRule,
+  installCursorMcp,
+  removeCursorMcp,
   installCursorModeCommand,
+  removeCursorModeCommand,
+  installCursorSessionHook,
+  removeCursorSessionHook,
 } from "../lib/cursor.mjs";
 import { installKimi, removeKimi } from "../lib/kimi.mjs";
 import { installOpencode, removeOpencode } from "../lib/opencode.mjs";
@@ -47,6 +53,8 @@ Usage:
   mcpbox-claude codex-uninit [--dir DIR]
   mcpbox-claude cursor-init [--dir DIR] Write .cursor/rules/mcpbox-policy.mdc +
                                         .cursor/mcp.json mcpbox entry. Idempotent.
+                                        In $HOME the policy goes to a sessionStart
+                                        hook in ~/.cursor/hooks.json instead.
   mcpbox-claude cursor-uninit [--dir DIR]
   mcpbox-claude kimi-init [--dir DIR]   Write AGENTS.md policy + ~/.kimi-code/mcp.json
                                         mcpbox entry + [[hooks]] in ~/.kimi-code/config.toml.
@@ -128,8 +136,26 @@ async function cmdCodexUninit(rest) {
   report(prompts);
 }
 
+// Cursor ignores ~/.cursor/rules: in the home dir the policy goes through the
+// user-level sessionStart hook, and a rule left by older installs is dropped.
+function isHomeDir(projectDir) {
+  return resolve(projectDir ?? process.cwd()) === resolve(homedir());
+}
+
+async function installCursorHome(homeDir) {
+  report(await installCursorSessionHook({ homeDir }));
+  const stale = await removeCursorRule({ projectDir: homeDir });
+  if (stale.action !== "missing") report(stale);
+  report(await installCursorModeCommand({ projectDir: homeDir }));
+}
+
 async function cmdCursorInit(rest) {
   const { projectDir } = parseDirFlag(rest);
+  if (isHomeDir(projectDir)) {
+    await installCursorHome(homedir());
+    report(await installCursorMcp({ projectDir: homedir() }));
+    return;
+  }
   const { rule, mcp, mode } = await installCursor({ projectDir });
   report(rule);
   report(mcp);
@@ -138,6 +164,13 @@ async function cmdCursorInit(rest) {
 
 async function cmdCursorUninit(rest) {
   const { projectDir } = parseDirFlag(rest);
+  if (isHomeDir(projectDir)) {
+    report(await removeCursorSessionHook({ homeDir: homedir() }));
+    report(await removeCursorRule({ projectDir: homedir() }));
+    report(await removeCursorMcp({ projectDir: homedir() }));
+    report(await removeCursorModeCommand({ projectDir: homedir() }));
+    return;
+  }
   const { rule, mcp, mode } = await removeCursor({ projectDir });
   report(rule);
   report(mcp);
@@ -183,6 +216,7 @@ async function cmdCodexPolicy(rest) {
 
 async function cmdCursorPolicy(rest) {
   const { projectDir } = parseDirFlag(rest);
+  if (isHomeDir(projectDir)) return installCursorHome(homedir());
   report(await installCursorRule({ projectDir }));
   report(await installCursorModeCommand({ projectDir }));
 }

@@ -1,6 +1,6 @@
 {
   "name": "@mcpbox/mcpbox-claude",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "MCPBox agent harness for Claude Code: managed policy (daruma tracker + full pipeline), hooks, and slash commands over the single mcpbox MCP server.",
   "type": "module",
   "publishConfig": {

@@ -87,8 +87,9 @@ call instead of the text. Knowledge rows arrive
 marked as workspace data, not instructions. Mode `off` disables both.
 
 A stale version announces itself at session start on Claude, Codex, and Kimi.
-The Cursor adapter installs no hooks (Cursor has them since 2026, unwired
-here), so nothing announces anything there — check manually, or let
+The Cursor adapter's only hook is the user-level `sessionStart` that carries
+the policy (global installs); it does no update check, so nothing announces
+anything there — check manually, or let
 `cursor-init` in a routine update pass do it. Set
 `MCPBOX_NO_UPDATE_CHECK=1` to disable the registry lookup entirely (air-gapped
 installs, CI).
@@ -99,7 +100,7 @@ installs, CI).
 |--------|----------------------------------------|-------------------------------------|-------|
 | Claude | `CLAUDE.md` block + plugin (hooks, `/mcpbox:*`) | `claude mcp add` (`.mcp.json` / `~/.claude.json`) | plugin `hooks.json` |
 | Codex  | `AGENTS.md` block + model-invoked plugin skills | `[mcp_servers.mcpbox]` in `~/.codex/config.toml` | — |
-| Cursor | `.cursor/rules/mcpbox-policy.mdc` + `/mcpbox-mode` | `mcpbox` entry in `.cursor/mcp.json` | — |
+| Cursor | `.cursor/rules/mcpbox-policy.mdc` + `/mcpbox-mode` (repo); in `$HOME` a `sessionStart` hook in `~/.cursor/hooks.json` instead — Cursor reads no `~/.cursor/rules` | `mcpbox` entry in `.cursor/mcp.json` | `~/.cursor/hooks.json` `sessionStart` (global only) |
 | Kimi   | `AGENTS.md` block (`mcpbox:policy`)     | `mcpbox` entry in `~/.kimi-code/mcp.json` | `[[hooks]]` block in `~/.kimi-code/config.toml` |
 | OpenCode | `AGENTS.md` block (`mcpbox:policy`)   | `mcpbox` remote entry under `mcp` in `~/.config/opencode/opencode.json` | — |
 
@@ -128,7 +129,8 @@ mcpbox-claude init [--dir DIR]          Managed CLAUDE.md policy block. Idempote
 mcpbox-claude uninit [--dir DIR]        Remove the CLAUDE.md policy block.
 mcpbox-claude codex-init [--dir DIR]    AGENTS.md policy + config.toml server + routing skill.
 mcpbox-claude codex-uninit [--dir DIR]
-mcpbox-claude cursor-init [--dir DIR]   .cursor/rules policy + .cursor/mcp.json server.
+mcpbox-claude cursor-init [--dir DIR]   .cursor/rules policy + .cursor/mcp.json server
+                                        (in $HOME: ~/.cursor/hooks.json sessionStart hook).
 mcpbox-claude cursor-uninit [--dir DIR]
 mcpbox-claude kimi-init [--dir DIR]     AGENTS.md policy + ~/.kimi-code/mcp.json server
                                         + ~/.kimi-code/config.toml [[hooks]].

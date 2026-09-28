@@ -1,6 +1,6 @@
 {
   "name": "mcpbox",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "MCPBox agent stack for Codex: the daruma tracker plus the MeiSei maturity pipeline behind one MCP server.",
   "author": {
     "name": "tupical"

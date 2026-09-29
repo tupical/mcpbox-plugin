@@ -13,7 +13,7 @@ Drive the mcpbox MCP server (do not invent IDs, do not write local plan files).
    - Else `daruma_project_list` → pick first. If none, say "no projects yet" and stop.
 
 2. Fetch tasks server-side (don't filter locally):
-   - `daruma_list` with `project_id = <resolved>`, `status = ["inbox","todo","in_progress"]`, limit ~50.
+   - `daruma_list project_id=<resolved> status=active limit=50`.
    - **Never** use `status=all` unless the user explicitly asked for the full archive; it is token-heavy.
 
 3. Render exactly this format:

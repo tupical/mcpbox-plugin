@@ -7,7 +7,7 @@ The user invoked `/mcpbox:plan`.
 ## Steps
 
 1. Resolve project (`daruma_workspace_info` → `default_project`).
-2. `daruma_plan_list` filtered to `status = ["draft","active","in_progress"]`, most recent first.
+2. `daruma_plan_list status="draft,active"`, most recent first.
    If none, stop with "no active plan".
 3. For the chosen plan, `daruma_plan_get` (single call — do not enumerate the archive).
 4. Render:

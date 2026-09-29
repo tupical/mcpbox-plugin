@@ -76,7 +76,7 @@ async function fetchSummary() {
     } catch { /* no workspace info — continue without project filter */ }
 
     const listArgs = {
-      status: ["inbox", "todo", "in_progress", "in_review"],
+      status: "active",
       limit: MAX_TASKS + 1,
     };
     if (projectId) listArgs.project_id = projectId;

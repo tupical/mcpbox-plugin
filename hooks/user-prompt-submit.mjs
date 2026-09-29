@@ -41,7 +41,13 @@ const PATTERNS = [
   {
     // create / import — ACTION + task/issue OBJECT (avoids bare-verb false positives).
     re: /\b(add|create|new|log|move|import)\s+(a\s+|an\s+)?(task|issue|ticket|subtask)\b|(?<![а-яёА-ЯЁ])(добавь|добавить|заведи|завести|создай|создать)\s+(задачу|таск|подзадачу|тикет)(?![а-яёА-ЯЁ])|(?<![а-яёА-ЯЁ])(перенеси|перенести|импортируй|заведи)\s+(ишью|задачу|таск|тикет|issue)(?![а-яёА-ЯЁ])/,
-    hint: "[mcpbox] Detected task-intake/import intent → daruma_plan_materialize (tasks are created only with a plan; external issue: also daruma_link the source). Adding to an EXISTING plan: still materialize (no bare-task intake), then attach via daruma_plan_add_task (recompose) or pass parent_plan_id. Not a lookup — don't treat the id as an existing task.",
+    hint: "[mcpbox] Detected task-intake/import intent → daruma_plan_materialize (tasks are created only with a plan; an external issue is its source — plan.source.ref = the issue URL, not a second tracker). Adding to an EXISTING plan: still materialize (no bare-task intake), then attach via daruma_plan_add_task (recompose) or pass parent_plan_id. Not a lookup — don't treat the id as an existing task.",
+  },
+  {
+    // "Создай план" / "make a plan": the plan goes to mcpbox, not into chat.
+    // Bare "распланируй" plans vacations too — only with a work object.
+    re: /\b(make|write|create)\s+(a\s+|the\s+)?plan\b|(?<![а-яёА-ЯЁ])((созда(й|йте|ть)|напиши(те)?|написать|состав(ь|ьте|ить))\s+план|распланируй\s+(задачи|работу|релиз|спринт|миграцию|проект|итерацию))(?![а-яёА-ЯЁ])/,
+    hint: "[mcpbox] Detected plan request → decided work: daruma_plan_materialize first (plan.source = issue URL or chat label), then reply with a short summary and the plan id; never a plan only in chat. Raw idea / undecided direction: mcpbox_pipeline_run.",
   },
   {
     re: /\b(list|show|view)\s+(all\s+|active\s+|open\s+)?(tasks|issues|backlog)\b|(?<![а-яёА-ЯЁ])(выпиши|покажи|перечисли|список)\s+(активные\s+)?(задачи|задач|таски|бэклог)(?![а-яёА-ЯЁ])/,
@@ -62,6 +68,14 @@ const PATTERNS = [
   {
     re: /\b(close|complete|mark\s+.*done)\b|(?<![а-яёА-ЯЁ])(закрой|закрыть|завершить|пометь\s+.*выполненной)(?![а-яёА-ЯЁ])/,
     hint: "[mcpbox] Detected close intent → if this refers to a daruma task: /mcpbox:close in Claude, otherwise daruma_complete (or daruma_set_status).",
+  },
+  {
+    // An issue from an external tracker — its URL, or `#N` next to the word
+    // issue/ticket/work item/задача. An agent once took a GitLab issue for a
+    // "second tracker" and recorded no plan at all. A bare `#123` is not one.
+    // Last: "close issue #42" / "status of issue #12" keep their own intent.
+    re: /https?:\/\/\S+?\/(issues|work_items)\/(\d+|[a-z][a-z0-9_]*-\d+)|https?:\/\/\S+?\/browse\/[a-z][a-z0-9_]*-\d+|(\b(issue|ticket|work\s*item)\b|(?<![а-яёА-ЯЁ])(ишью|тикет|задач[а-яё]*)(?![а-яёА-ЯЁ]))[\s:]*#\d+(?!\w)|#\d+(?!\w)[\s:]*(\b(issue|ticket|work\s*item)\b|(?<![а-яёА-ЯЁ])(ишью|тикет|задач[а-яё]*)(?![а-яёА-ЯЁ]))/,
+    hint: "[mcpbox] Detected an external issue/work item → if you'll work on it, it is the SOURCE of the request, not a second tracker: daruma_plan_materialize with plan.source.ref = the issue URL, then daruma_plan_drain_next → daruma_complete; decisions → mcpbox_knowledge_write. Only reading/answering about it records nothing.",
   },
 ];
 

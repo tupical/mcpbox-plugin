@@ -1,6 +1,6 @@
 {
   "name": "mcpbox",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "MCPBox for Codex: the mcpbox task tracker and idea pipeline behind one MCP server.",
   "author": {
     "name": "tupical"

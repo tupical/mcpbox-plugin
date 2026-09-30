@@ -1,7 +1,7 @@
 {
   "name": "mcpbox-claude",
   "description": "MCPBox for Claude Code: the mcpbox task tracker and idea pipeline over one MCP server. Ships /mcpbox:* commands, session hooks, and a managed CLAUDE.md policy that makes mcpbox the default tracker.",
-  "version": "0.1.24",
+  "version": "0.1.25",
   "author": {
     "name": "tupical"
   },

@@ -86,6 +86,8 @@ unbound in the paired workspace, the hook adds a ready `mcpbox_knowledge_read`
 call instead of the text. Knowledge rows arrive
 marked as workspace data, not instructions. Mode `off` disables both.
 
+Paired, the `Stop` hook blocks a stop once per task left `in_progress` that was taken in this session, asking the agent to complete, send to review, or release it.
+
 A stale version announces itself at session start on Claude, Codex, and Kimi.
 The Cursor adapter's only hook is the user-level `sessionStart` that carries
 the policy (global installs); it does no update check, so nothing announces
@@ -118,7 +120,7 @@ Kimi specifics:
   `~/.kimi-code/config.toml`; `$KIMI_CODE_HOME` is honored). One
   `/mcp-config login mcpbox` OAuth then covers every project.
 - The hook scripts (`SessionStart` task summary, `UserPromptSubmit` routing
-  hints, `Stop` auto-record nudge) are the same ones the Claude plugin ships;
+  hints, `Stop` guard) are the same ones the Claude plugin ships;
   `kimi-init` copies them into `~/.kimi-code/mcpbox/` so the config never
   references an ephemeral npx cache path. `kimi-uninit` removes that directory.
 

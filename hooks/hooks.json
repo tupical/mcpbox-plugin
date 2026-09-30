@@ -1,5 +1,5 @@
 {
-  "description": "mcpbox-claude hooks: proactive session summary, capture/pipeline hints, and auto-record",
+  "description": "mcpbox-claude hooks: proactive session summary, capture/pipeline hints, and a Stop guard against tasks left in_progress",
   "hooks": {
     "SessionStart": [
       {
@@ -28,9 +28,7 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.mjs\"",
-            "asyncRewake": true,
-            "rewakeMessage": "mcpbox-claude auto-record: consider capturing a reusable lesson from this session, or skip.",
-            "rewakeSummary": "mcpbox-claude captured a session lesson"
+            "timeout": 10
           }
         ]
       }

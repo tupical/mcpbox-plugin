@@ -14,7 +14,6 @@
 // Claude Code — this also covers Claude setups without the env var).
 
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -25,6 +24,7 @@ import {
   formatKnowledge,
   readCredentials,
 } from "../lib/cloud-knowledge.mjs";
+import { SESSION_MARKERS, readStdin, sessionMarker } from "../lib/hook-input.mjs";
 import { writeHookOutput } from "../lib/hook-output.mjs";
 import { readMode } from "../lib/mode.mjs";
 import { checkForUpdate, updateNotice } from "../lib/update-check.mjs";
@@ -117,27 +117,6 @@ export function promptSubmitHint(promptText = "", mode = "lite") {
   return "";
 }
 
-// Reads stdin to EOF with a timeout so a hook caller that keeps stdin open
-// can never hang the prompt submit path.
-function readStdin(timeoutMs = 3000) {
-  return new Promise((resolve) => {
-    if (process.stdin.isTTY) return resolve("");
-    let raw = "";
-    const done = () => {
-      clearTimeout(timer);
-      resolve(raw);
-    };
-    const timer = setTimeout(() => {
-      process.stdin.destroy();
-      resolve(raw);
-    }, timeoutMs);
-    process.stdin.setEncoding("utf8");
-    process.stdin.on("data", (chunk) => { raw += chunk; });
-    process.stdin.on("end", done);
-    process.stdin.on("error", done);
-  });
-}
-
 // Kimi's UserPromptSubmit payload carries the prompt text; the exact field
 // name is not documented, so accept the common shapes. Kimi sends it as an
 // array of content blocks — `prompt: [{type: "text", text: "…"}]` — which the
@@ -163,7 +142,6 @@ export function promptFromHookPayload(payload) {
 // Without a session id there is no "first": callers treat it as not first.
 // Markers older than a week are swept on each successful claim, so the
 // directory stays bounded however many sessions run.
-const SESSION_MARKERS = () => join(homedir(), ".agents", "mcpbox", "sessions");
 const MARKER_TTL_MS = 7 * 24 * 3600 * 1000;
 
 function sweepMarkers(dir) {
@@ -182,7 +160,7 @@ export async function claimFirstPrompt(payload) {
   const dir = SESSION_MARKERS();
   try {
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, sessionId.replace(/[^\w.-]/g, "_")), "", { flag: "wx" });
+    await writeFile(sessionMarker(sessionId), "", { flag: "wx" });
   } catch {
     return false;
   }

@@ -41,7 +41,7 @@ const PATTERNS = [
   {
     // create / import — ACTION + task/issue OBJECT (avoids bare-verb false positives).
     re: /\b(add|create|new|log|move|import)\s+(a\s+|an\s+)?(task|issue|ticket|subtask)\b|(?<![а-яёА-ЯЁ])(добавь|добавить|заведи|завести|создай|создать)\s+(задачу|таск|подзадачу|тикет)(?![а-яёА-ЯЁ])|(?<![а-яёА-ЯЁ])(перенеси|перенести|импортируй|заведи)\s+(ишью|задачу|таск|тикет|issue)(?![а-яёА-ЯЁ])/,
-    hint: "[mcpbox] Detected task-intake/import intent → daruma_plan_materialize (tasks are created only with a plan; an external issue is its source — plan.source.ref = the issue URL, not a second tracker). Adding to an EXISTING plan: still materialize (no bare-task intake), then attach via daruma_plan_add_task (recompose) or pass parent_plan_id. Not a lookup — don't treat the id as an existing task.",
+    hint: "[mcpbox] Detected task-intake/import intent → daruma_plan_materialize (tasks are created only with a plan; an external issue is its source — plan.source.ref = the issue URL, not a second tracker). Raw / undecided → mcpbox_pipeline_run instead. Adding to an EXISTING plan: still materialize (no bare-task intake), then attach via daruma_plan_add_task (recompose) or pass parent_plan_id. Not a lookup — don't treat the id as an existing task.",
   },
   {
     // "Создай план" / "make a plan": the plan goes to mcpbox, not into chat.
@@ -93,6 +93,11 @@ const PATTERNS = [
 const OPERATIONAL_EXIT =
   "If this is an operational action you can just carry out — start/restart something, read a log, check status, open a file, answer a question — do it and record nothing, in neither daruma nor the pipeline. Otherwise: ";
 
+// full mode: after the exit and before any pattern hint — raw material goes to
+// the pipeline first, so no hint reads as "straight to daruma".
+const RAW_FIRST =
+  "Raw material (idea, hypothesis, undecided direction) → mcpbox_pipeline_run first; only decided, bounded work follows the hint: ";
+
 const FULL_ASSESS_HINT =
   "[mcpbox:full] " + OPERATIONAL_EXIT + "assess rawness: only raw material — an idea, hypothesis, or undecided direction — goes to mcpbox_pipeline_run. Work that is already decided and bounded, and follow-up work extending a run that has already handed off (it has a task_id), both go straight to daruma via daruma_plan_materialize. A run still in flight is not a shortcut — finish it first.";
 
@@ -109,8 +114,8 @@ export function promptSubmitHint(promptText = "", mode = "lite") {
   for (const { re, hint } of patterns) {
     if (re.test(prompt)) {
       // A keyword match is a guess about intent, not a verdict on it — in full
-      // mode the operational exit goes ahead of the guess.
-      return mode === "full" ? `[mcpbox:full] ${OPERATIONAL_EXIT}${hint}` : hint;
+      // mode the operational exit and the rawness check go ahead of the guess.
+      return mode === "full" ? `[mcpbox:full] ${OPERATIONAL_EXIT}${RAW_FIRST}${hint}` : hint;
     }
   }
   if (mode === "full" && prompt.length >= SUBSTANTIVE_MIN) return FULL_ASSESS_HINT;

@@ -8,7 +8,7 @@ The user invoked `/mcpbox:plan`.
 
 1. Resolve project (`daruma_workspace_info` → `default_project`).
 2. `daruma_plan_list status="draft,active"`, most recent first.
-   If none, stop with "no active plan".
+   If none, stop with "no active plan — decided work: `daruma_plan_materialize`; raw idea: `/mcpbox:pipeline-run`".
 3. For the chosen plan, `daruma_plan_get` (single call — do not enumerate the archive).
 4. Render:
 

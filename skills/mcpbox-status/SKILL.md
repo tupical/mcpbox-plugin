@@ -20,7 +20,11 @@ The user invoked `/mcpbox:status`.
      may be absent. Omit the line entirely — never print `null` or a bare UUID.
 2. Resolve the project **title** for that `project_id` via `daruma_project_list`
    (the `name` inside `scopes` is only the directory basename, not the project's
-   title). Skip if the cwd matches no scope.
+   title). Skip if the cwd matches no scope. If that project carries
+   `possible_duplicates`, the repo was registered twice and its history is
+   split: add a `duplicates:` line with those ids (title, slug) and, when the
+   user asks about tasks, plans or findings, check each id — never conclude
+   history is missing from the bound id alone.
 3. One scoped `daruma_list status=active` → count open tasks (do not enumerate
    the archive).
 4. `mcpbox_runs_list` with `limit=5` (and `status=failed` if the user asked about
@@ -32,6 +36,7 @@ The user invoked `/mcpbox:status`.
    workspace: <title> (<slug>)
    account:   <email>
    project:   <project title> — <repo path>
+   duplicates: <id> (<slug>) · … — only when `possible_duplicates` is set
    open:      <N> tasks
    server:    ok (v<version>, sha <git_sha>) — only when `/mcpbox:doctor` ran
    runs:      <run_id> <status> · <run_id> <status> …

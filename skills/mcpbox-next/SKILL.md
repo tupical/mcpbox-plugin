@@ -10,7 +10,7 @@ to the user/agent to actually execute it.
 
 1. Resolve project (`daruma_workspace_info` → `default_project`).
 2. Active plan: `daruma_plan_list` filtered to `status = "active"`, most recent.
-   If none, stop with "no active plan — create one with `daruma_plan_materialize`".
+   If none, stop with "no active plan — decided work: `daruma_plan_materialize`; raw idea: `/mcpbox:pipeline-run`".
 3. `daruma_plan_drain_next` with the plan id. The server atomically picks the next
    ready (unblocked) task and claims it for this session; it returns null when no
    unclaimed ready task remains.

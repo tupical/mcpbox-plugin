@@ -110,15 +110,27 @@ async function fetchSummary() {
 export async function syncPolicy(cwd = process.cwd(), env = process.env) {
   if (env.MCPBOX_NO_POLICY_SYNC) return [];
   const paths = [];
-  if (isCodexSurface(env)) {
+  // Codex has no hooks of its own (.codex-plugin declares none), so any plugin
+  // surface refreshes the Codex carriers too: AGENTS.md up the tree, plus the
+  // user-level SKILL.md — refreshed from Claude, retired from the Codex plugin.
+  if (env.CLAUDE_PLUGIN_ROOT && !isCodexSurface(env)) {
+    paths.push(...await syncPolicyBlocks({ cwd }).catch(() => []));
+  }
+  if (isCodexSurface(env) || env.CLAUDE_PLUGIN_ROOT) {
     paths.push(...await syncPolicyBlocks({ cwd, file: "AGENTS.md", block: BLOCK_BODY_PLAIN }).catch(() => []));
     try {
-      const { syncCodexSkill } = await import("../lib/codex.mjs");
-      const skill = await syncCodexSkill();
-      if (skill.action === "updated") paths.push(skill.path);
+      const { retireCodexSkill, syncCodexSkill } = await import("../lib/codex.mjs");
+      if (isCodexSurface(env)) {
+        // Running as the Codex plugin, which ships the policy skill itself:
+        // a user-level copy is now a duplicate (see retireCodexSkill).
+        const { removed, backups } = await retireCodexSkill();
+        paths.push(...removed.map((dir) => `${dir} (duplicate removed: the plugin ships this skill)`));
+        paths.push(...backups.map((file) => `${file} (the differing copy, kept)`));
+      } else {
+        const skill = await syncCodexSkill();
+        if (skill.action === "updated") paths.push(skill.path);
+      }
     } catch { /* skill dir unwritable — AGENTS.md sync still counts */ }
-  } else if (env.CLAUDE_PLUGIN_ROOT) {
-    paths.push(...await syncPolicyBlocks({ cwd }).catch(() => []));
   }
   return paths;
 }
@@ -172,7 +184,7 @@ export async function main() {
 
   const lines = [header, ...shown.map(formatTask)];
   if (extra > 0) lines.push(`  …and ${extra} more — /mcpbox:tasks for full list`);
-  lines.push("→ /mcpbox:next to claim the next task  |  /mcpbox:status for server + pipeline health");
+  lines.push("→ /mcpbox:next to claim the next task  |  /mcpbox:status for server + pipeline health  |  raw idea: /mcpbox:pipeline-run");
 
   writeHookOutput("SessionStart", syncNote + lines.join("\n"), { systemMessage });
   process.exit(0);

@@ -19,9 +19,16 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { installPolicy, removePolicy, policyHierarchy, stalePolicyPaths, competingPolicyPaths } from "../lib/policy.mjs";
+import { installPolicy, removePolicy, policyHierarchy, stalePolicyPaths, competingPolicyPaths, BLOCK_BODY_PLAIN } from "../lib/policy.mjs";
 import { credentialsPath, login, logout, readCredentials } from "../lib/cloud-knowledge.mjs";
-import { installCodex, removeCodex, installCodexPolicy } from "../lib/codex.mjs";
+import {
+  installCodex,
+  removeCodex,
+  installCodexPolicy,
+  installCodexSkill,
+  retireCodexSkill,
+  syncCodexSkill,
+} from "../lib/codex.mjs";
 import {
   installCursor,
   removeCursor,
@@ -48,8 +55,9 @@ Usage:
                                         (daruma tracker + full pipeline). Idempotent.
   mcpbox-claude uninit [--dir DIR]      Remove the managed CLAUDE.md policy block.
   mcpbox-claude codex-init [--dir DIR]  Write AGENTS.md policy, ~/.codex/config.toml
-                                        [mcp_servers.mcpbox] and the mcpbox skill.
-                                        Idempotent.
+                                        [mcp_servers.mcpbox] and the mcpbox skill
+                                        (for Codex without the plugin, which ships
+                                        that skill itself). Idempotent.
   mcpbox-claude codex-uninit [--dir DIR]
   mcpbox-claude cursor-init [--dir DIR] Write .cursor/rules/mcpbox-policy.mdc +
                                         .cursor/mcp.json mcpbox entry. Idempotent.
@@ -214,6 +222,20 @@ async function cmdCodexPolicy(rest) {
   report(await installCodexPolicy({ projectDir }));
 }
 
+// The user-level policy skill alone: `codex-skill` for Codex without the
+// plugin, `codex-skill-retire` once the plugin (which ships it) is installed.
+async function cmdCodexSkill() {
+  report(await installCodexSkill());
+}
+
+async function cmdCodexSkillRetire() {
+  const { removed, backups, kept } = await retireCodexSkill();
+  for (const path of removed) process.stdout.write(`✓ Removed duplicate ${path}\n`);
+  for (const path of backups) process.stdout.write(`✓ Saved the differing copy to ${path}\n`);
+  for (const path of kept) process.stdout.write(`! Left alone (not a copy mcpbox wrote) ${path}\n`);
+  if (!removed.length && !kept.length) process.stdout.write("✓ No user-level mcpbox skill to retire\n");
+}
+
 async function cmdCursorPolicy(rest) {
   const { projectDir } = parseDirFlag(rest);
   if (isHomeDir(projectDir)) return installCursorHome(homedir());
@@ -269,6 +291,11 @@ async function cmdDoctor(rest) {
   const ready = policy && !hierarchy.duplicate && mcp === true;
   // Stale is a warning, not NOT READY: the next SessionStart refreshes it.
   const stale = await stalePolicyPaths(hierarchy.paths);
+  // Codex carriers (no Codex hooks exist): AGENTS.md up the tree and the user skill.
+  const agents = await policyHierarchy({ projectDir, file: "AGENTS.md" }).catch(() => ({ paths: [] }));
+  const agentsStale = await stalePolicyPaths(agents.paths, BLOCK_BODY_PLAIN);
+  const skill = await syncCodexSkill({ dryRun: true }).catch(() => ({ action: "missing" }));
+  const skillStale = skill.action === "stale" ? [skill.path] : [];
   // Also a warning: two policies in one file, one of them from the daruma CLI.
   const competing = await competingPolicyPaths({ projectDir });
   // Not required: without it hooks hint at the knowledge instead of loading it.
@@ -282,6 +309,9 @@ async function cmdDoctor(rest) {
       policy_stale: stale.length > 0,
       policy_stale_paths: stale,
       policy_competing_paths: competing,
+      agents_md_paths: agents.paths,
+      agents_md_stale_paths: agentsStale,
+      codex_skill_stale_paths: skillStale,
       knowledge_paired: paired,
     }) + "\n");
   } else {
@@ -290,6 +320,9 @@ async function cmdDoctor(rest) {
       `mcpbox MCP server: ${mark(mcp)}${mcp === null ? " (claude CLI not found)" : ""}\n` +
         `CLAUDE.md policy:  ${mark(policy)}${hierarchy.duplicate ? " (duplicate managed blocks)" : ""}\n` +
         hierarchy.paths.map((p) => `  ${p}${stale.includes(p) ? " (stale — the next session start of this plugin version refreshes it)" : ""}\n`).join("") +
+        (agents.paths.length ? `AGENTS.md policy:  ✓\n` : "") +
+        agents.paths.map((p) => `  ${p}${agentsStale.includes(p) ? " (stale — run: mcpbox-claude codex-init)" : ""}\n`).join("") +
+        skillStale.map((p) => `  ${p} (stale — run: mcpbox-claude codex-init)\n`).join("") +
         competing.map((p) => `  ! ${p} also holds a daruma CLI policy block — keep one\n`).join("") +
         `Project knowledge: ${paired ? "✓ paired" : "hint only — run: npx -y @mcpbox/mcpbox-claude login"}\n` +
         `${ready ? "READY" : "NOT READY — run: npx @mcpbox/mcpbox setup"}\n`
@@ -352,6 +385,10 @@ async function main(argv) {
       return cmdOpencodeUninit(rest);
     case "codex-policy":
       return cmdCodexPolicy(rest);
+    case "codex-skill":
+      return cmdCodexSkill();
+    case "codex-skill-retire":
+      return cmdCodexSkillRetire();
     case "cursor-policy":
       return cmdCursorPolicy(rest);
     case "doctor":

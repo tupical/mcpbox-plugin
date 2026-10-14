@@ -46,9 +46,17 @@ codex plugin add mcpbox --marketplace mcpbox
 codex plugin marketplace upgrade mcpbox   # later, to update
 ```
 
-Codex exposes the plugin's command workflows as skills. `codex-init` installs
-the managed policy, MCP server, and routing skill; it does not write the unused
-`~/.codex/prompts` surface. `codex-uninit` still removes legacy `mcpbox-*.md`
+Codex exposes the plugin's command workflows as skills, and the plugin ships
+the routing policy itself as the `mcpbox` skill. `codex-init` is for Codex
+without the plugin: it installs the managed policy, MCP server, and a
+user-level copy of that skill (`$CODEX_HOME/skills/mcpbox`); it does not write
+the unused `~/.codex/prompts` surface. With the plugin, that copy is a
+duplicate: a Codex plugin session (and `mcpbox setup`, via
+`codex-skill-retire`) removes it when it is a copy mcpbox wrote, after saving
+a copy that differs from the current text to `$CODEX_HOME/mcpbox-skill-backup-*`.
+A skill without the mcpbox header, with extra files, from a newer release,
+inside Git, or beneath a linked directory is left alone. Cleanup also skips
+paths when Git ownership cannot be checked. `codex-uninit` still removes legacy `mcpbox-*.md`
 prompt files left by older installs.
 
 Cursor and Kimi have no plugin manager; they are file installs, so re-run their
@@ -62,8 +70,8 @@ npx -y @mcpbox/mcpbox-claude@latest opencode-init
 
 On Claude and Codex a plugin update also reaches the policy you already
 installed: at session start the hook rewrites every existing `mcpbox:policy`
-block from the working directory up (`CLAUDE.md` on Claude, `AGENTS.md` plus
-the `mcpbox` skill on Codex) to the running version, and says so in the
+block from the working directory up (`CLAUDE.md` on Claude, `AGENTS.md` on
+Codex; Claude also refreshes a user-level Codex `mcpbox` skill) to the running version, and says so in the
 session context. It never adds a block and never touches text outside the
 markers; `doctor --json` reports `policy_stale` until it has run. Set
 `MCPBOX_NO_POLICY_SYNC=1` to keep installed blocks as they are.
@@ -107,7 +115,8 @@ installs, CI).
 | OpenCode | `AGENTS.md` block (`mcpbox:policy`)   | `mcpbox` remote entry under `mcp` in `~/.config/opencode/opencode.json` | — |
 
 Codex skills are generated at package time from the same `commands/*.md` files
-that provide Claude's `/mcpbox:*` commands. Codex selects these skills by their
+that provide Claude's `/mcpbox:*` commands, plus `skills/mcpbox` from the shared
+plain policy (`BLOCK_BODY_PLAIN`). Codex selects these skills by their
 descriptions; they are not user-entered slash commands.
 
 All four agents accept `mcpbox mode [off|lite|full]` through the managed
@@ -131,6 +140,8 @@ mcpbox-claude init [--dir DIR]          Managed CLAUDE.md policy block. Idempote
 mcpbox-claude uninit [--dir DIR]        Remove the CLAUDE.md policy block.
 mcpbox-claude codex-init [--dir DIR]    AGENTS.md policy + config.toml server + routing skill.
 mcpbox-claude codex-uninit [--dir DIR]
+mcpbox-claude codex-skill               User-level routing skill only (Codex without the plugin).
+mcpbox-claude codex-skill-retire        Remove that user-level copy once the plugin ships it.
 mcpbox-claude cursor-init [--dir DIR]   .cursor/rules policy + .cursor/mcp.json server
                                         (in $HOME: ~/.cursor/hooks.json sessionStart hook).
 mcpbox-claude cursor-uninit [--dir DIR]

@@ -7,8 +7,9 @@ The user invoked `/mcpbox:mode` with `$ARGUMENTS` = `off` | `lite` | `full` (emp
 
 ## What each level does
 
-- **off** — no pipeline nudging; don't raise the pipeline on your own. Raw material still
-  isn't materialized straight into daruma — ask the user instead.
+Mode sets how eagerly to suggest `mcpbox_pipeline_run`: `off` never, `lite` only when asked, `full` for any substantive request.
+
+- **off** — no pipeline nudging; don't raise the pipeline on your own.
 - **lite** (default) — nudge toward the pipeline only when the input explicitly mentions it
   (pipeline / maturity / handoff / конвейер …).
 - **full** — assess every substantive request for **rawness**. A raw idea, hypothesis, or
@@ -22,6 +23,9 @@ anything belonging to a run still in flight — goes through the pipeline.
 
 The level persists across sessions (stored in `~/.agents/mcpbox/mode`) and is read by the
 UserPromptSubmit hook, which injects the matching reminder on each prompt.
+
+Codex/Cursor/Kimi/OpenCode have no such hook: their `*-init` command writes the mode into the
+MCP URL (`?mode=`), so re-run it after changing the mode.
 
 ## Steps
 

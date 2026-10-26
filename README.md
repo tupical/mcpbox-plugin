@@ -76,6 +76,34 @@ session context. It never adds a block and never touches text outside the
 markers; `doctor --json` reports `policy_stale` until it has run. Set
 `MCPBOX_NO_POLICY_SYNC=1` to keep installed blocks as they are.
 
+The block text comes from the server, not only from the package: the hook asks
+`GET /v1/policy/claude` and `/v1/policy/plain` (the paired server from
+`login`, else `https://mcpbox.ru`) with `If-None-Match`, so a rule changed on
+the server reaches installed blocks at the next session start; `304` downloads
+nothing. The copy and its ETag live in `~/.agents/mcpbox/policy-<surface>.json`.
+Offline the last copy stays (failures back off for an hour); the text baked into
+the package is written only when no server copy was ever fetched. `doctor`
+shows the ETag and when the copy was fetched and last checked
+(`policy_server` in `--json`). `MCPBOX_NO_POLICY_FETCH=1` keeps the baked text.
+The served bodies are `policy/{claude,plain}.md`, generated from
+`lib/policy.mjs` by `node scripts/generate-policy-snapshot.mjs` — rerun it
+after editing the block text (a test fails on drift).
+
+Three carriers, one text, the server wins: every place this package writes the
+policy gets the same server copy. `plain` goes into `AGENTS.md`, the Codex
+user skill `$CODEX_HOME/skills/mcpbox/SKILL.md` and the Cursor rule
+`.cursor/rules/mcpbox-policy.mdc`; the session start refreshes all of them
+(rules and blocks in the working directory and every ancestor up to `/`,
+including `~`; the skill when one is installed), and `doctor` reports a
+stale one (`codex_skill_stale_paths`, `cursor_rule_stale_paths`). The
+`*-init` / `*-policy` / `codex-skill` commands write the copy already on disk
+and never ask the server themselves. The Cursor `sessionStart` hook in
+`~/.cursor/hooks.json` reads `~/.agents/mcpbox/policy-plain.json` each time it
+runs, so it follows the server without a reinstall. Two copies stay baked
+until the next release: the skill shipped inside the Codex plugin package
+(a session of that plugin keeps `AGENTS.md` on the server text) and the
+Kimi hooks frozen at `kimi-init`.
+
 ### Project knowledge in every session
 
 Agents answer repo questions right when they have the project's knowledge
@@ -95,6 +123,7 @@ call instead of the text. Knowledge rows arrive
 marked as workspace data, not instructions. Mode `off` disables both.
 
 Paired, the `Stop` hook blocks a stop once per task left `in_progress` that was taken in this session, asking the agent to complete, send to review, or release it.
+If the lookup times out, it exits silently; lingering network connections do not delay process exit. Any blocking response is flushed before exit.
 
 A stale version announces itself at session start on Claude, Codex, and Kimi.
 The Cursor adapter's only hook is the user-level `sessionStart` that carries

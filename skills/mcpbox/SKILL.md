@@ -3,7 +3,7 @@ name: mcpbox
 description: MCPBox/daruma routing policy — read before creating tasks or plans, choosing between the daruma tracker and the maturity pipeline, or when the user mentions the tracker, backlog, plan, decomposition, or `mcpbox mode`.
 ---
 
-<!-- mcpbox-claude:policy-version 0.1.26 -->
+<!-- mcpbox-claude:policy-version 0.1.27 -->
 # MCPBox — default agent stack
 
 The **mcpbox** MCP server (`https://mcpbox.ru/v1/mcp`) is this workspace's task
@@ -18,13 +18,15 @@ tracker. "Daruma", "дарума", "трекер", "tracker", "таск-мене
    "Составь план", "Распланируй", "make/write/create a plan" — or about to
    answer with a plan, step list or task breakdown for it, in Plan mode too —
    first create it with `daruma_plan_materialize`, then reply with a short
-   summary and the plan id; never a plan only as chat text. Set
-   `plan.source` (link to the issue/message, or a short label for a chat
-   request; never invent links) and, in a git repo, `plan.git_context.repo`
-   and `plan.git_context.branch`. A decided GitLab/GitHub/Jira issue, work item
-   or ticket is the request's source, not a second tracker: materialize it with
-   `plan.source.ref` = its URL, then `daruma_plan_drain_next` →
-   `daruma_complete`; decisions go to `mcpbox_knowledge_write`.
+   summary and the plan id; never a plan only as chat text. Same subject as a
+   plan (follow-up, check, commit): its `plan.id` — a completed plan reopens;
+   another subject gets its own plan even on one branch/source;
+   `plan_choice_required`: pick by subject. `plan.source` = nearest source of
+   this request (meeting, message; chat: a label), `upstream` to the issue, not
+   the broadest umbrella; never invent links. In git: `plan.git_context.repo`,
+   `plan.git_context.branch`. A decided GitLab/GitHub/Jira issue or work item is
+   a source, not a second tracker: `plan.source.ref` = its URL, then
+   `daruma_plan_drain_next` → `daruma_complete`.
 
    Roles: GitLab/GitHub/Jira holds the request itself (the issue or work item);
    mcpbox extends it and holds the small technical tasks nobody files there.
@@ -85,7 +87,7 @@ it at once; two active tasks need the human's call or a `relates_to` link.
 how eagerly to suggest `mcpbox_pipeline_run`: `off` never, `lite` only when asked, `full` for any substantive request. To change it, run
 `npx -y @mcpbox/mcpbox-claude@latest mode <value>` and report the result.
 
-Routing. 0) An action (run, read a log, check status, answer) leaves nothing to track: do it, record NOTHING. 1) Decided work (goal, scope, done-criterion known): daruma_plan_materialize. 2) Follow-up of a pipeline run with status=handed_off: daruma_plan_materialize + daruma_link to its task_id; a run not handed off yet: finish it first. 3) Raw (idea, undecided direction): mcpbox_pipeline_run, then mcpbox_pipeline_handoff — never straight into daruma; if handoff is rejected, tell the user why and never work around it. Can't tell 1 from 3: take 1; pipeline only if the user asks or mode=full.
+Routing. 0) An action (run, check, answer) leaves nothing to track: do it, record NOTHING. 1) Decided work: daruma_plan_materialize; same subject as a plan (its follow-up, check, commit): plan.id, a completed one reopens; other subject: own plan even on one branch/source. 2) Pipeline run follow-up: status=handed_off → rule 1 + daruma_link to task_id; not handed off yet: finish it first. 3) Raw idea: mcpbox_pipeline_run, then mcpbox_pipeline_handoff — never straight into daruma; handoff is rejected: explain why, never work around it. Can't tell 1 from 3: take 1; pipeline only if the user asks or mode=full.
 
 ### Useful requests
 

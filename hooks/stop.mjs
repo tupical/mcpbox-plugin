@@ -99,5 +99,8 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch(() => {});
+  main().catch(() => {}).finally(() => {
+    // Aborted fetch connections can outlive main; flush the decision before exiting.
+    process.stdout.write("", () => process.exit(0));
+  });
 }

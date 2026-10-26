@@ -19,7 +19,9 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { installPolicy, removePolicy, policyHierarchy, stalePolicyPaths, competingPolicyPaths, BLOCK_BODY_PLAIN } from "../lib/policy.mjs";
+import { installPolicy, removePolicy, policyHierarchy, stalePolicyPaths, competingPolicyPaths, versionedBlock, BLOCK_BODY, BLOCK_BODY_PLAIN } from "../lib/policy.mjs";
+import { policyBlocks, readPolicyCache } from "../lib/update-check.mjs";
+import { VERSION } from "../lib/version.mjs";
 import { credentialsPath, login, logout, readCredentials } from "../lib/cloud-knowledge.mjs";
 import {
   installCodex,
@@ -40,6 +42,7 @@ import {
   removeCursorModeCommand,
   installCursorSessionHook,
   removeCursorSessionHook,
+  syncCursorRules,
 } from "../lib/cursor.mjs";
 import { installKimi, removeKimi } from "../lib/kimi.mjs";
 import { installOpencode, removeOpencode } from "../lib/opencode.mjs";
@@ -112,7 +115,7 @@ const VERB = {
 
 async function cmdInit(rest) {
   const { projectDir } = parseDirFlag(rest);
-  const r = await installPolicy({ projectDir });
+  const r = await installPolicy({ projectDir, block: (await installBlocks()).claude });
   process.stdout.write(`✓ ${VERB[r.action] ?? r.action} ${r.path}\n`);
   process.stdout.write("Open Claude Code in this directory to pick it up.\n");
 }
@@ -123,13 +126,17 @@ async function cmdUninit(rest) {
   process.stdout.write(`✓ ${VERB[r.action] ?? r.action} ${r.path}\n`);
 }
 
+// What an install writes: the server's text this machine last fetched, else
+// the baked one — the text the next session start would sync to anyway.
+const installBlocks = () => policyBlocks({ fetch: false });
+
 function report(r) {
   process.stdout.write(`✓ ${VERB[r.action] ?? r.action} ${r.path}\n`);
 }
 
 async function cmdCodexInit(rest) {
   const { projectDir } = parseDirFlag(rest);
-  const { policy, mcp, skill } = await installCodex({ projectDir });
+  const { policy, mcp, skill } = await installCodex({ projectDir, block: (await installBlocks()).plain });
   report(policy);
   report(mcp);
   report(skill);
@@ -164,7 +171,7 @@ async function cmdCursorInit(rest) {
     report(await installCursorMcp({ projectDir: homedir() }));
     return;
   }
-  const { rule, mcp, mode } = await installCursor({ projectDir });
+  const { rule, mcp, mode } = await installCursor({ projectDir, block: (await installBlocks()).plain });
   report(rule);
   report(mcp);
   report(mode);
@@ -219,17 +226,17 @@ async function cmdOpencodeUninit(rest) {
 // MCP-server wiring and just need the managed policy file dropped.
 async function cmdCodexPolicy(rest) {
   const { projectDir } = parseDirFlag(rest);
-  report(await installCodexPolicy({ projectDir }));
+  report(await installCodexPolicy({ projectDir, block: (await installBlocks()).plain }));
 }
 
 // The user-level policy skill alone: `codex-skill` for Codex without the
 // plugin, `codex-skill-retire` once the plugin (which ships it) is installed.
 async function cmdCodexSkill() {
-  report(await installCodexSkill());
+  report(await installCodexSkill({ block: (await installBlocks()).plain }));
 }
 
 async function cmdCodexSkillRetire() {
-  const { removed, backups, kept } = await retireCodexSkill();
+  const { removed, backups, kept } = await retireCodexSkill({ block: (await installBlocks()).plain });
   for (const path of removed) process.stdout.write(`✓ Removed duplicate ${path}\n`);
   for (const path of backups) process.stdout.write(`✓ Saved the differing copy to ${path}\n`);
   for (const path of kept) process.stdout.write(`! Left alone (not a copy mcpbox wrote) ${path}\n`);
@@ -239,7 +246,7 @@ async function cmdCodexSkillRetire() {
 async function cmdCursorPolicy(rest) {
   const { projectDir } = parseDirFlag(rest);
   if (isHomeDir(projectDir)) return installCursorHome(homedir());
-  report(await installCursorRule({ projectDir }));
+  report(await installCursorRule({ projectDir, block: (await installBlocks()).plain }));
   report(await installCursorModeCommand({ projectDir }));
 }
 
@@ -289,13 +296,32 @@ async function cmdDoctor(rest) {
   const policy = hierarchy.present;
   const mcp = mcpServerPresent();
   const ready = policy && !hierarchy.duplicate && mcp === true;
+  // Which server text this machine holds and when it last asked; blocks are
+  // compared with that copy, the baked text only when none was ever fetched.
+  const served = {};
+  for (const surface of ["claude", "plain"]) {
+    const { etag, body, fetchedAt, checkedAt, failedAt } = await readPolicyCache(surface);
+    const iso = (t) => (Number.isFinite(t) ? new Date(t).toISOString() : null);
+    served[surface] = typeof etag === "string" && typeof body === "string"
+      ? { etag, fetched_at: iso(fetchedAt), checked_at: iso(checkedAt), failed_at: iso(failedAt), body }
+      : null;
+  }
+  const claudeBlock = served.claude ? versionedBlock(served.claude.body) : BLOCK_BODY;
+  const plainBlock = served.plain ? versionedBlock(served.plain.body) : BLOCK_BODY_PLAIN;
+  const policyServer = Object.fromEntries(Object.entries(served).map(([k, v]) => {
+    if (!v) return [k, null];
+    const { body: _, ...meta } = v;
+    return [k, meta];
+  }));
   // Stale is a warning, not NOT READY: the next SessionStart refreshes it.
-  const stale = await stalePolicyPaths(hierarchy.paths);
+  const stale = await stalePolicyPaths(hierarchy.paths, claudeBlock);
   // Codex carriers (no Codex hooks exist): AGENTS.md up the tree and the user skill.
   const agents = await policyHierarchy({ projectDir, file: "AGENTS.md" }).catch(() => ({ paths: [] }));
-  const agentsStale = await stalePolicyPaths(agents.paths, BLOCK_BODY_PLAIN);
-  const skill = await syncCodexSkill({ dryRun: true }).catch(() => ({ action: "missing" }));
+  const agentsStale = await stalePolicyPaths(agents.paths, plainBlock);
+  const skill = await syncCodexSkill({ dryRun: true, block: plainBlock }).catch(() => ({ action: "missing" }));
   const skillStale = skill.action === "stale" ? [skill.path] : [];
+  // Cursor rules up the tree carry the same plain text.
+  const cursorStale = await syncCursorRules({ cwd: resolve(projectDir ?? process.cwd()), block: plainBlock, dryRun: true });
   // Also a warning: two policies in one file, one of them from the daruma CLI.
   const competing = await competingPolicyPaths({ projectDir });
   // Not required: without it hooks hint at the knowledge instead of loading it.
@@ -312,7 +338,9 @@ async function cmdDoctor(rest) {
       agents_md_paths: agents.paths,
       agents_md_stale_paths: agentsStale,
       codex_skill_stale_paths: skillStale,
+      cursor_rule_stale_paths: cursorStale,
       knowledge_paired: paired,
+      policy_server: policyServer,
     }) + "\n");
   } else {
     const mark = (v) => (v === true ? "✓" : v === false ? "✗" : "?");
@@ -320,9 +348,13 @@ async function cmdDoctor(rest) {
       `mcpbox MCP server: ${mark(mcp)}${mcp === null ? " (claude CLI not found)" : ""}\n` +
         `CLAUDE.md policy:  ${mark(policy)}${hierarchy.duplicate ? " (duplicate managed blocks)" : ""}\n` +
         hierarchy.paths.map((p) => `  ${p}${stale.includes(p) ? " (stale — the next session start of this plugin version refreshes it)" : ""}\n`).join("") +
+        Object.entries(policyServer).map(([surface, meta]) => meta
+          ? `  server text (${surface}): ETag ${meta.etag}, fetched ${meta.fetched_at ?? "?"}, checked ${meta.checked_at ?? "?"}${meta.failed_at ? `, last failure ${meta.failed_at}` : ""}\n`
+          : `  server text (${surface}): not fetched yet — blocks carry plugin ${VERSION} text\n`).join("") +
         (agents.paths.length ? `AGENTS.md policy:  ✓\n` : "") +
         agents.paths.map((p) => `  ${p}${agentsStale.includes(p) ? " (stale — run: mcpbox-claude codex-init)" : ""}\n`).join("") +
         skillStale.map((p) => `  ${p} (stale — run: mcpbox-claude codex-init)\n`).join("") +
+        cursorStale.map((p) => `  ${p} (stale — run: mcpbox-claude cursor-init)\n`).join("") +
         competing.map((p) => `  ! ${p} also holds a daruma CLI policy block — keep one\n`).join("") +
         `Project knowledge: ${paired ? "✓ paired" : "hint only — run: npx -y @mcpbox/mcpbox-claude login"}\n` +
         `${ready ? "READY" : "NOT READY — run: npx @mcpbox/mcpbox setup"}\n`

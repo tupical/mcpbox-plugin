@@ -1,106 +1,11 @@
 #!/usr/bin/env node
-// SessionStart hook: query the mcpbox tracker and print a compact summary of
-// open tasks so Claude sees them at the top of every fresh session.
-//
-// Output goes to stdout — Claude Code injects it as a <system-reminder>.
-// Exit 0 always so an mcpbox outage never blocks the session from opening.
-//
-// Fetch path: spawns the local `daruma` binary in stdio MCP mode (same tracker
-// tools the mcpbox server exposes). Cloud-only setups without the local binary
-// silently no-op (exit 0) — the /mcpbox:tasks command still works on demand.
-// ponytail: stdio-only fetch; add an HTTP+token path for cloud-only if the
-// silent no-op proves too quiet in practice.
-//
-// Environment variables:
-//   MCPBOX_MCP_CMD   — command to start the stdio MCP server (default: "daruma")
-//   MCPBOX_MCP_ARGS  — space-separated extra args (default: "mcp serve")
-//   MCPBOX_SCOPE     — optional project_scope path filter
+// SessionStart refreshes policy and update notices; task selection is explicit.
 
 import { isCodexSurface, writeHookOutput } from "../lib/hook-output.mjs";
-import { MCPClient } from "../lib/mcp-client.mjs";
 import { syncPolicyBlocks } from "../lib/policy.mjs";
 import { checkForUpdate, policyBlocks, updateNotice } from "../lib/update-check.mjs";
 import { VERSION } from "../lib/version.mjs";
 import { pathToFileURL } from "node:url";
-
-const TIMEOUT_MS = 12_000;
-const MAX_TASKS = 15;
-
-const STATUS_EMOJI = {
-  inbox: "📥",
-  todo: "⬜",
-  in_progress: "🟢",
-  in_review: "🔍",
-  done: "✅",
-  cancelled: "🚫",
-};
-
-function emoji(status) {
-  return STATUS_EMOJI[status] ?? "❓";
-}
-
-function truncate(str, len) {
-  if (!str) return "";
-  return str.length > len ? str.slice(0, len - 1) + "…" : str;
-}
-
-function formatTask(t) {
-  const e = emoji(t.status ?? "");
-  const pri = t.priority ? `p${t.priority}` : "  ";
-  const title = truncate(t.title ?? t.subject ?? "(no title)", 60);
-  return `  ${e} [${pri}] ${title}`;
-}
-
-async function fetchSummary() {
-  const cmd = process.env.MCPBOX_MCP_CMD ?? "daruma";
-  const extraArgs = process.env.MCPBOX_MCP_ARGS ?? "mcp serve";
-  const args = extraArgs.trim() ? extraArgs.trim().split(/\s+/) : ["mcp", "serve"];
-  const scope = process.env.MCPBOX_SCOPE;
-
-  const client = new MCPClient();
-  const timer = setTimeout(() => {
-    client.stop().catch(() => {});
-  }, TIMEOUT_MS);
-
-  try {
-    await client.start(cmd, args, { stderrLog: null });
-    await client.initialize();
-
-    let projectId = null;
-    let projectTitle = null;
-    try {
-      const wsResult = await client.callTool("daruma_workspace_info", {});
-      const ws = wsResult.parsed ?? {};
-      projectId = ws.default_project ?? ws.defaultProject ?? null;
-      projectTitle = ws.project_title ?? ws.title ?? null;
-    } catch { /* no workspace info — continue without project filter */ }
-
-    const listArgs = {
-      status: "active",
-      limit: MAX_TASKS + 1,
-    };
-    if (projectId) listArgs.project_id = projectId;
-    if (!projectId && scope) listArgs.project_scope = scope;
-
-    const listResult = await client.callTool("daruma_list", listArgs);
-    const raw = listResult.parsed ?? listResult.text;
-    const tasks = Array.isArray(raw)
-      ? raw
-      : Array.isArray(raw?.tasks)
-        ? raw.tasks
-        : Array.isArray(raw?.items)
-          ? raw.items
-          : [];
-
-    await client.stop();
-    clearTimeout(timer);
-    return { tasks, projectTitle, projectId };
-  } catch (err) {
-    clearTimeout(timer);
-    try { await client.stop(); } catch { /* ignore */ }
-    throw err;
-  }
-}
 
 // Block text to write: the server's copy, else the baked text (see policyBlocks).
 export { policyBlocks };
@@ -147,13 +52,7 @@ export async function syncPolicy(cwd = process.cwd(), env = process.env) {
 }
 
 export async function main() {
-  const [data, update, { paths: synced, origin }] = await Promise.all([
-    fetchSummary().catch((err) => {
-      if (process.env.MCPBOX_DEBUG) {
-        process.stderr.write(`[mcpbox-claude/session-start] error: ${err?.message ?? err}\n`);
-      }
-      return null;
-    }),
+  const [update, { paths: synced, origin }] = await Promise.all([
     checkForUpdate({ current: VERSION }),
     syncPolicy(),
   ]);
@@ -169,35 +68,7 @@ export async function main() {
   ].filter(Boolean);
   const systemMessage = notices.length ? notices.join("\n") : undefined;
 
-  if (!data) {
-    writeHookOutput("SessionStart", syncNote, { systemMessage });
-    process.exit(0);
-  }
-
-  const { tasks, projectTitle } = data;
-
-  if (!tasks || tasks.length === 0) {
-    writeHookOutput(
-      "SessionStart",
-      syncNote + "[mcpbox] No open tasks — run /mcpbox:tasks to verify, or /mcpbox:pipeline-run \"<idea>\" to open a maturity run.",
-      { systemMessage },
-    );
-    process.exit(0);
-  }
-
-  const shown = tasks.slice(0, MAX_TASKS);
-  const extra = tasks.length > MAX_TASKS ? tasks.length - MAX_TASKS : 0;
-  const count = tasks.length > MAX_TASKS ? MAX_TASKS + "+" : tasks.length;
-  const plural = tasks.length !== 1 ? "s" : "";
-  const header = projectTitle
-    ? `[mcpbox] ${count} open task${plural} in "${projectTitle}":`
-    : `[mcpbox] ${count} open task${plural}:`;
-
-  const lines = [header, ...shown.map(formatTask)];
-  if (extra > 0) lines.push(`  …and ${extra} more — /mcpbox:tasks for full list`);
-  lines.push("→ /mcpbox:next to claim the next task  |  /mcpbox:status for server + pipeline health  |  raw idea: /mcpbox:pipeline-run");
-
-  writeHookOutput("SessionStart", syncNote + lines.join("\n"), { systemMessage });
+  writeHookOutput("SessionStart", syncNote, { systemMessage });
   process.exit(0);
 }
 

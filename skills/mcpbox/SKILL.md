@@ -3,7 +3,7 @@ name: mcpbox
 description: MCPBox/daruma routing policy — read before creating tasks or plans, choosing between the daruma tracker and the maturity pipeline, or when the user mentions the tracker, backlog, plan, decomposition, or `mcpbox mode`.
 ---
 
-<!-- mcpbox-claude:policy-version 0.1.27 -->
+<!-- mcpbox-claude:policy-version 0.1.28 -->
 # MCPBox — default agent stack
 
 The **mcpbox** MCP server (`https://mcpbox.ru/v1/mcp`) is this workspace's task

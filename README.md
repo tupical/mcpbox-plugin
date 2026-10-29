@@ -122,7 +122,7 @@ unbound in the paired workspace, the hook adds a ready `mcpbox_knowledge_read`
 call instead of the text. Knowledge rows arrive
 marked as workspace data, not instructions. Mode `off` disables both.
 
-Paired, the `Stop` hook blocks a stop once per task left `in_progress` that was taken in this session, asking the agent to complete, send to review, or release it.
+Paired, `PostToolUse` records successful task claims for the current session. `Stop` only checks these tasks and nudges once while the exact claim is still live and the task remains `in_progress`. Reads of another plan never change this set. An unknown session, an expired claim, or a claim now held by another session produces no nudge; there is no timestamp or project-wide fallback. `SessionStart` refreshes policy and update notices without injecting task inventories.
 If the lookup times out, it exits silently; lingering network connections do not delay process exit. Any blocking response is flushed before exit.
 
 A stale version announces itself at session start on Claude, Codex, and Kimi.
@@ -138,8 +138,8 @@ installs, CI).
 | Agent  | Policy surface                         | MCP server                          | Hooks |
 |--------|----------------------------------------|-------------------------------------|-------|
 | Claude | `CLAUDE.md` block + plugin (hooks, `/mcpbox:*`) | `claude mcp add` (`.mcp.json` / `~/.claude.json`) | plugin `hooks.json` |
-| Codex  | `AGENTS.md` block + model-invoked plugin skills | `[mcp_servers.mcpbox]` in `~/.codex/config.toml` | — |
-| Cursor | `.cursor/rules/mcpbox-policy.mdc` + `/mcpbox-mode` (repo); in `$HOME` a `sessionStart` hook in `~/.cursor/hooks.json` instead — Cursor reads no `~/.cursor/rules` | `mcpbox` entry in `.cursor/mcp.json` | `~/.cursor/hooks.json` `sessionStart` (global only) |
+| Codex  | `AGENTS.md` block + model-invoked plugin skills | `[mcp_servers.mcpbox]` in `~/.codex/config.toml` | session gate in `~/.codex/hooks.json` |
+| Cursor | `.cursor/rules/mcpbox-policy.mdc` + `/mcpbox-mode` (repo); in `$HOME` a `sessionStart` hook in `~/.cursor/hooks.json` instead — Cursor reads no `~/.cursor/rules` | `mcpbox` entry in `.cursor/mcp.json` | `~/.cursor/hooks.json`: `sessionStart` policy (global only) + session gate (`failClosed`) |
 | Kimi   | `AGENTS.md` block (`mcpbox:policy`)     | `mcpbox` entry in `~/.kimi-code/mcp.json` | `[[hooks]]` block in `~/.kimi-code/config.toml` |
 | OpenCode | `AGENTS.md` block (`mcpbox:policy`)   | `mcpbox` remote entry under `mcp` in `~/.config/opencode/opencode.json` | — |
 
@@ -157,10 +157,27 @@ Kimi specifics:
 - MCP and hooks are **user-level** (Kimi reads hooks only from
   `~/.kimi-code/config.toml`; `$KIMI_CODE_HOME` is honored). One
   `/mcp-config login mcpbox` OAuth then covers every project.
-- The hook scripts (`SessionStart` task summary, `UserPromptSubmit` routing
-  hints, `Stop` guard) are the same ones the Claude plugin ships;
+- The hook scripts (`SessionStart` notices, `UserPromptSubmit` routing
+  hints, `PostToolUse` claim tracking, `Stop` guard) are the same ones the Claude plugin ships;
   `kimi-init` copies them into `~/.kimi-code/mcpbox/` so the config never
   references an ephemeral npx cache path. `kimi-uninit` removes that directory.
+
+Session gate (Claude, Codex, Cursor, Kimi) — one set of scripts, different
+configs; `--surface=codex|cursor` selects the host's stdin/stdout wire:
+
+- `hooks/session-gate.mjs start` — SessionStart (also after compaction): this
+  agent's `in_progress` claims and the repo's `in_review` tasks.
+- `hooks/track-claims.mjs` — PostToolUse (Cursor: `afterMCPExecution`):
+  successful claims plus `daruma_plan_materialize` / `daruma_set_status` /
+  `daruma_comment` writes; a `kind=outcome` comment marks its task reported.
+- `hooks/stop.mjs` — blocks while a tracked task is `todo`/`in_progress`
+  without an outcome comment; two reminders per pending set, then a warning
+  (Cursor: `followup_message`).
+- `hooks/session-gate.mjs end` — SessionEnd: `daruma_release` of this
+  session's claims the server still shows as its own.
+
+Codex and Cursor run copies in `~/.agents/mcpbox/harness/` (written by
+`codex-init` / `cursor-init`), never the ephemeral npx cache.
 
 ## CLI
 
@@ -182,7 +199,15 @@ mcpbox-claude opencode-init [--dir DIR] AGENTS.md policy + `mcpbox` entry under
 mcpbox-claude opencode-uninit [--dir DIR]
 mcpbox-claude doctor [--json]           Check the mcpbox MCP server + policy are wired.
 mcpbox-claude mode [off|lite|full]       Show or set the shared pipeline mode.
+mcpbox-claude git-hook [install|uninstall] [--dir DIR]
+                                        git prepare-commit-msg hook: adds
+                                        "Daruma-Task: <id>" for the work/<id> branch,
+                                        else for tasks this session claimed.
 ```
+
+CI on `main` posts an outcome for each `Daruma-Task` (task → `in_review`) and a
+gated deploy completes it; see `docs/CI.md` in mcpbox.ru. The hook never
+overwrites a foreign `prepare-commit-msg` and never blocks a commit.
 
 All writes are idempotent and preserve surrounding hand-written content.
 Set `MCPBOX_NO_UPDATE_CHECK=1` to disable hook update checks.

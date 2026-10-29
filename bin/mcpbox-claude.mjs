@@ -45,8 +45,10 @@ import {
   syncCursorRules,
 } from "../lib/cursor.mjs";
 import { installKimi, removeKimi } from "../lib/kimi.mjs";
+import { installCodexHooks, installCursorHooks, removeCodexHooks, removeCursorHooks } from "../lib/harness-hooks.mjs";
 import { installOpencode, removeOpencode } from "../lib/opencode.mjs";
 import { readMode, writeMode, MODES } from "../lib/mode.mjs";
+import { installGitHook, prepareCommitMsg, removeGitHook } from "../lib/git-trailer.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf8"));
@@ -58,12 +60,15 @@ Usage:
                                         (daruma tracker + full pipeline). Idempotent.
   mcpbox-claude uninit [--dir DIR]      Remove the managed CLAUDE.md policy block.
   mcpbox-claude codex-init [--dir DIR]  Write AGENTS.md policy, ~/.codex/config.toml
-                                        [mcp_servers.mcpbox] and the mcpbox skill
+                                        [mcp_servers.mcpbox], the mcpbox skill
                                         (for Codex without the plugin, which ships
-                                        that skill itself). Idempotent.
+                                        that skill itself) and the session-gate
+                                        hooks in ~/.codex/hooks.json. Idempotent.
   mcpbox-claude codex-uninit [--dir DIR]
   mcpbox-claude cursor-init [--dir DIR] Write .cursor/rules/mcpbox-policy.mdc +
-                                        .cursor/mcp.json mcpbox entry. Idempotent.
+                                        .cursor/mcp.json mcpbox entry, plus the
+                                        session-gate hooks in ~/.cursor/hooks.json.
+                                        Idempotent.
                                         In $HOME the policy goes to a sessionStart
                                         hook in ~/.cursor/hooks.json instead.
   mcpbox-claude cursor-uninit [--dir DIR]
@@ -79,6 +84,11 @@ Usage:
   mcpbox-claude login                   Pair this machine so hooks load project knowledge.
   mcpbox-claude logout                  Forget the pairing token.
   mcpbox-claude mode [off|lite|full]    Get/set pipeline strictness (how raw ideas route).
+  mcpbox-claude git-hook [install|uninstall] [--dir DIR]
+                                        Manage the git prepare-commit-msg hook that adds
+                                        "Daruma-Task: <id>" trailers (work/<id> branch or
+                                        tasks claimed in this session). Never overwrites a
+                                        foreign hook.
   mcpbox-claude export-marketplace [--dir DIR]
                                         Mirror this package to a stable directory usable as
                                         a Claude Code marketplace; prints the path.
@@ -140,6 +150,7 @@ async function cmdCodexInit(rest) {
   report(policy);
   report(mcp);
   report(skill);
+  report(await installCodexHooks());
 }
 
 async function cmdCodexUninit(rest) {
@@ -149,6 +160,7 @@ async function cmdCodexUninit(rest) {
   report(mcp);
   report(skill);
   report(prompts);
+  report(await removeCodexHooks());
 }
 
 // Cursor ignores ~/.cursor/rules: in the home dir the policy goes through the
@@ -169,12 +181,15 @@ async function cmdCursorInit(rest) {
   if (isHomeDir(projectDir)) {
     await installCursorHome(homedir());
     report(await installCursorMcp({ projectDir: homedir() }));
+    report(await installCursorHooks());
     return;
   }
   const { rule, mcp, mode } = await installCursor({ projectDir, block: (await installBlocks()).plain });
   report(rule);
   report(mcp);
   report(mode);
+  // The session gate is user-level: Cursor runs ~/.cursor/hooks.json in every project.
+  report(await installCursorHooks());
 }
 
 async function cmdCursorUninit(rest) {
@@ -184,6 +199,7 @@ async function cmdCursorUninit(rest) {
     report(await removeCursorRule({ projectDir: homedir() }));
     report(await removeCursorMcp({ projectDir: homedir() }));
     report(await removeCursorModeCommand({ projectDir: homedir() }));
+    report(await removeCursorHooks());
     return;
   }
   const { rule, mcp, mode } = await removeCursor({ projectDir });
@@ -382,6 +398,21 @@ async function cmdExportMarketplace(rest) {
   process.stdout.write(`${target}\n`);
 }
 
+async function cmdGitHook(rest) {
+  const [action = "install", ...flags] = rest;
+  const dir = parseDirFlag(flags).projectDir ?? process.cwd();
+  if (action === "install") {
+    const r = await installGitHook(dir);
+    process.stdout.write(r.installed ? `installed ${r.path}\n` : `skipped ${r.path}: ${r.reason}\n`);
+    if (!r.installed) process.exitCode = 1;
+  } else if (action === "uninstall") {
+    const r = await removeGitHook(dir);
+    process.stdout.write(r.removed ? `removed ${r.path}\n` : `nothing to remove at ${r.path}\n`);
+  } else {
+    throw new Error(`git-hook: unknown action ${action} (install|uninstall)`);
+  }
+}
+
 async function main(argv) {
   const [, , cmd, ...rest] = argv;
   switch (cmd) {
@@ -431,6 +462,12 @@ async function main(argv) {
       return cmdLogout();
     case "mode":
       return cmdMode(rest);
+    case "git-hook":
+      return cmdGitHook(rest);
+    case "prepare-commit-msg":
+      // The git hook shim's fallback when the plugin path moved; never fails a commit.
+      await prepareCommitMsg({ messageFile: rest[0] }).catch(() => {});
+      return;
     case "export-marketplace":
       return cmdExportMarketplace(rest);
     default:

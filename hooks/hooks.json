@@ -1,5 +1,5 @@
 {
-  "description": "mcpbox-claude hooks: proactive session summary, capture/pipeline hints, and a Stop guard against tasks left in_progress",
+  "description": "mcpbox-claude hooks: proactive session summary with this agent's open tasks, capture/pipeline hints, a Stop gate against tasks left open without an outcome comment, and SessionEnd release of this session's claims",
   "hooks": {
     "SessionStart": [
       {
@@ -8,6 +8,11 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs\"",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-gate.mjs\" start",
+            "timeout": 10
           }
         ]
       }
@@ -51,6 +56,27 @@
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/acceptance-guard.mjs\"",
             "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": ".*daruma_(plan_drain_next|ready_drain|claim|plan_materialize|set_status|comment)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/track-claims.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/session-gate.mjs\" end",
+            "timeout": 10
           }
         ]
       }
